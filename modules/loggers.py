@@ -42,6 +42,15 @@ class BaseLog(object):
             self._logger.addHandler(ch)
 
 
+class CoreLog(BaseLog):
+    def __new__(cls, logging_level=None):
+        if cls._logging_level is not None and logging_level is not None:
+            raise AttributeError("CoreLog needs to be set to a logging level first")
+        if not cls._instance:
+            super().__init__(cls, "CORE", logging_level)
+            cls._instance = cls
+        return cls._instance._logger
+
 class SimulationLog(BaseLog):
     def __new__(cls, logging_level=None):
         if cls._logging_level is not None and logging_level is not None:

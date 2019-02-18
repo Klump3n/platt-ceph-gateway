@@ -5,7 +5,7 @@ Deliver data from the ceph cluster to the platt backend.
 """
 import argparse
 
-from modules.loggers import BackendLog as bl, SimulationLog as sl
+from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 def parse_commandline():
     """
@@ -72,6 +72,8 @@ def setup_logging(logging_level):
     Setup the loggers.
 
     """
+    cl(logging_level)           # setup simulation logging
+    cl().info("Started Core logging with level '{}'".format(logging_level))
     sl(logging_level)           # setup simulation logging
     sl().info("Started Simulation logging with level '{}'".format(logging_level))
     bl(logging_level)           # setup backend logging
