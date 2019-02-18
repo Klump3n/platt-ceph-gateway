@@ -3,6 +3,8 @@
 Deliver data from the ceph cluster to the platt backend.
 
 """
+import sys
+import unittest
 import argparse
 
 from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
@@ -39,12 +41,12 @@ def parse_commandline():
         "-s", "--sim_port", type=int, default=8010,
         help="The port on which the simulation can connect"
     )
-    # parser.add_argument(
-    #     "--test",
-    #     help="Perform unittests and exit afterwards",
-    #     action="store_true",
-    #     default=False
-    # )
+    parser.add_argument(
+        "--test",
+        help="Perform unittests and exit afterwards",
+        action="store_true",
+        default=False
+    )
     parser.add_argument(
         "-l", "--log",
         help="Set the logging level",
@@ -54,19 +56,30 @@ def parse_commandline():
     args = parser.parse_args()
     return args
 
+def build_local_index():
+    """
+    Build a local index of the data on the ceph cluster.
+
+    """
+    cl().info("Building local data index")
+    dc = DataCopy()
+    dc.add_file("ASD", 'asdads')
+    dc.get_index()
+
+
 def start_simulation_interface():
     """
     Start the interface for the simulation.
 
     """
-    pass
+    sl().info("Starting simulation interface")
 
 def start_backend_interface():
     """
     Start the interface for the backend.
 
     """
-    pass
+    bl().info("Starting backend interface")
 
 def setup_logging(logging_level):
     """
@@ -85,18 +98,33 @@ def start_proxy(args):
     Start the proxy server.
 
     """
-    dc = DataCopy()
-    # first start the listening port for the simulation\
+    # create an instance of the local data copy
+    build_local_index()
 
-    # load everything that comes from the sim into a buffer for later
+    # start the listening port for the simulation
+    start_simulation_interface()
 
     # start the backend connection
+    start_backend_interface()
 
     # create a local copy of the stuff on the ceph instance
 
     # merge the buffered stuff with the local copy
 
+def perform_unittests():
+    """
+    Start unittest for the program.
+
+    """
+    tests = unittest.TestLoader().discover('.')
+    # unittest.runner.TextTestRunner(verbosity=2, buffer=False).run(tests)
+    unittest.runner.TextTestRunner(verbosity=2, buffer=True).run(tests)
+
+    sys.exit("--- Performed unittests, exiting ---")
+
 if __name__ == "__main__":
     args = parse_commandline()
+    if args.test:
+        perform_unittests()
     setup_logging(args.log)
     start_proxy(args)

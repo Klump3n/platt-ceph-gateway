@@ -11,6 +11,10 @@ class BaseLog(object):
     _logging_level = None
 
     def __init__(self, name=None, logging_level=None):
+
+        if logging_level is None:
+            logging_level = "quiet"
+
         if not name or logging_level not in ["quiet", "debug", "info", "warning",
                                  "error", "critical"]:
             raise AttributeError(
