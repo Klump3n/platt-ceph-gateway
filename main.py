@@ -6,6 +6,7 @@ Deliver data from the ceph cluster to the platt backend.
 import argparse
 
 from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from modules.local_data_instance import DataCopy
 
 def parse_commandline():
     """
@@ -48,7 +49,7 @@ def parse_commandline():
         "-l", "--log",
         help="Set the logging level",
         default="info",
-        choices=["quiet", "debug", "info", "warning", "error", "critical"]
+        choices=["debug", "info", "warning", "error", "critical", "quiet"]
     )
     args = parser.parse_args()
     return args
@@ -84,7 +85,8 @@ def start_proxy(args):
     Start the proxy server.
 
     """
-    # first start the listening port for the simulation
+    dc = DataCopy()
+    # first start the listening port for the simulation\
 
     # load everything that comes from the sim into a buffer for later
 

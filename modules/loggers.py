@@ -14,8 +14,8 @@ class BaseLog(object):
         if not name or logging_level not in ["quiet", "debug", "info", "warning",
                                  "error", "critical"]:
             raise AttributeError(
-                "Need name and logging_level ('quiet', 'debug', 'info', "
-                "'warning', 'error', 'critical')"
+                "Need name and logging_level ('debug', 'info', "
+                "'warning', 'error', 'critical', 'quiet')"
             )
         if logging_level == "quiet":
             logging_level = logging.NOTSET
