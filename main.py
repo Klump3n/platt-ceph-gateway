@@ -119,8 +119,8 @@ def perform_unittests():
 
     """
     tests = unittest.TestLoader().discover('.')
-    # unittest.runner.TextTestRunner(verbosity=2, buffer=False).run(tests)
-    unittest.runner.TextTestRunner(verbosity=2, buffer=True).run(tests)
+    unittest.runner.TextTestRunner(verbosity=2, buffer=False).run(tests)
+    # unittest.runner.TextTestRunner(verbosity=2, buffer=True).run(tests)
 
     sys.exit("--- Performed unittests, exiting ---")
 

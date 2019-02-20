@@ -23,6 +23,17 @@ class DataCopy(object):
         return cls._instance
 
     @classmethod
+    def _reset(cls):
+        """
+        Delete the instance.
+
+        """
+        cls._instance = None
+        cls._hashset = set()
+        cls._local_copy = dict()
+        del cls
+
+    @classmethod
     def name_is_present(cls, name):
         """
         Check if a name is already present in the local copy.
@@ -35,16 +46,19 @@ class DataCopy(object):
             return False
 
     @classmethod
-    def add_file(cls, key, sha1sum):
-        sl().debug("Adding file {}/{}".format(key, sha1sum))
-        hashed_key = hash(key)
+    def add_file(cls, namespace_key, sha1sum):
+        sl().debug("Adding file {}/{}".format(namespace_key, sha1sum))
+        hashed_key = hash(namespace_key)
 
         if hashed_key not in cls._hashset:
 
             try:
+                namespace_split_key = namespace_key.split("\t")
+                namespace = namespace_split_key[0]
+                key = namespace_split_key[1]
                 string = key.split("universe.fo.")[1]
-                string, timestep = string.split("@")
-                usage_rest = string.split(".")
+                field, timestep = string.split("@")
+                usage_rest = field.split(".")
                 usage = usage_rest[0]
                 if usage == "elements":
                     elemtype = usage_rest[1]
@@ -67,7 +81,7 @@ class DataCopy(object):
 
             except:
                 # YOU SHALL NOT PARSE
-                sl().debug("Can not add file {}".format(key))
+                sl().debug("Can not add file {}".format(namespace_key))
                 return
 
             cls._hashset.add(hashed_key)
@@ -106,9 +120,14 @@ class DataCopy(object):
                     cls._local_copy[namespace][timestep][usage][fieldname] = {}
                 i_entry = cls._local_copy[namespace][timestep][usage][fieldname]
 
-            i_entry['object_key'] = key
-            i_entry['sha1sum'] = meta["sha1sum"]
+            i_entry['object_key'] = namespace_key.split("\t")[1]
+            i_entry['sha1sum'] = sha1sum
 
     @classmethod
-    def get_index(cls):
+    def get_index(cls, namespace=None):
+        if namespace:
+            try:
+                return cls._local_copy[namespace]
+            except KeyError:
+                return None
         return cls._local_copy
