@@ -21,16 +21,20 @@ def parse_commandline():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
+    # in case of unittests we shouldn't have to supply config, poolname and
+    # user name
+    unittest_requirements = ('--test' not in sys.argv)
+
     parser.add_argument(
-        "-c", "--config", required=True,
+        "-c", "--config", required=unittest_requirements,  # see above
         help="Path to the configuration file"
     )
     parser.add_argument(
-        "-p", "--pool", required=True,
+        "-p", "--pool", required=unittest_requirements,  # see above
         help="Name of the ceph pool"
     )
     parser.add_argument(
-        "-u", "--user", required=True,
+        "-u", "--user", required=unittest_requirements,  # see above
         help="Ceph user name"
     )
     parser.add_argument(
@@ -42,17 +46,18 @@ def parse_commandline():
         help="The port on which the simulation can connect"
     )
     parser.add_argument(
-        "--test",
-        help="Perform unittests and exit afterwards",
-        action="store_true",
-        default=False
-    )
-    parser.add_argument(
         "-l", "--log",
         help="Set the logging level",
         default="info",
         choices=["debug", "info", "warning", "error", "critical", "quiet"]
     )
+    parser.add_argument(
+        "--test",
+        help="Perform unittests and exit afterwards",
+        action="store_true",
+        default=False
+    )
+
     args = parser.parse_args()
     return args
 
@@ -63,9 +68,6 @@ def build_local_index():
     """
     cl().info("Building local data index")
     dc = DataCopy()
-    dc.add_file("ASD", 'asdads')
-    dc.get_index()
-
 
 def start_simulation_interface():
     """

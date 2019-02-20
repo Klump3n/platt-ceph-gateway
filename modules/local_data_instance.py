@@ -3,7 +3,9 @@
 Maintain a local copy of the data from the ceph cluster.
 
 """
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from modules.loggers import (CoreLog as cl,
+                             BackendLog as bl,
+                             SimulationLog as sl)
 
 class DataCopy(object):
     """
