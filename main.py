@@ -6,9 +6,10 @@ Deliver data from the ceph cluster to the platt backend.
 import sys
 import unittest
 import argparse
+import pathlib
 
 from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
-from modules.local_data_instance import DataCopy
+import modules.start_tasks as start_tasks
 
 def parse_commandline():
     """
@@ -42,7 +43,7 @@ def parse_commandline():
         help="The port on which the backend connects"
     )
     parser.add_argument(
-        "-s", "--sim_port", type=int, default=8010,
+        "-s", "--simulation_port", type=int, default=8010,
         help="The port on which the simulation can connect"
     )
     parser.add_argument(
@@ -61,27 +62,39 @@ def parse_commandline():
     args = parser.parse_args()
     return args
 
-def build_local_index():
-    """
-    Build a local index of the data on the ceph cluster.
+# def build_local_index(ceph_conf, ceph_pool, ceph_user):
+#     """
+#     Build a local index of the data on the ceph cluster.
 
-    """
-    cl().info("Building local data index")
-    dc = DataCopy()
+#     """
+#     cl.info("Building local data index")
+#     dc = DataCopy()
+#     cl.info("loading list of namespaces from rados on command line")
+#     ceph_namespaces = ci.get_namespaces(ceph_conf, ceph_pool, ceph_user)
+#     cl.info("Getting index from ceph")
+#     for namespace in ceph_namespaces:
+#         cl.debug("loading index for namespace {}".format(namespace))
+#         namespace_index = ci.namespace_index(ceph_conf, ceph_pool, ceph_user, namespace)
+#         cl.debug("placing {} keys in local data copy ".format(len(namespace_index)))
+#         for key, val in namespace_index.items():
+#             try:
+#                 dc.add_file(namespace, key, val["sha1sum"])
+#             except KeyError:
+#                 dc.add_file(namespace, key, None)
 
-def start_simulation_interface():
-    """
-    Start the interface for the simulation.
+# def start_simulation_interface():
+#     """
+#     Start the interface for the simulation.
 
-    """
-    sl().info("Starting simulation interface")
+#     """
+#     sl.info("Starting simulation interface")
 
-def start_backend_interface():
-    """
-    Start the interface for the backend.
+# def start_backend_interface():
+#     """
+#     Start the interface for the backend.
 
-    """
-    bl().info("Starting backend interface")
+#     """
+#     bl.info("Starting backend interface")
 
 def setup_logging(logging_level):
     """
@@ -89,29 +102,28 @@ def setup_logging(logging_level):
 
     """
     cl(logging_level)           # setup simulation logging
-    cl().info("Started Core logging with level '{}'".format(logging_level))
+    cl.info("Started Core logging with level '{}'".format(logging_level))
     sl(logging_level)           # setup simulation logging
-    sl().info("Started Simulation logging with level '{}'".format(logging_level))
+    sl.info("Started Simulation logging with level '{}'".format(logging_level))
     bl(logging_level)           # setup backend logging
-    bl().info("Started Backend logging with level '{}'".format(logging_level))
+    bl.info("Started Backend logging with level '{}'".format(logging_level))
 
-def start_proxy(args):
-    """
-    Start the proxy server.
+# def start_proxy(args):
+#     """
+#     Start the proxy server.
 
-    """
-    # create an instance of the local data copy
-    build_local_index()
+#     """
+#     # start the listening port for the simulation
+#     start_simulation_interface()
 
-    # start the listening port for the simulation
-    start_simulation_interface()
+#     # start the backend connection
+#     start_backend_interface()
 
-    # start the backend connection
-    start_backend_interface()
-
-    # create a local copy of the stuff on the ceph instance
-
-    # merge the buffered stuff with the local copy
+#     # create an instance of the local data copy
+#     ceph_conf = pathlib.Path(args.config)
+#     ceph_pool = args.pool
+#     ceph_user = args.user
+#     build_local_index(ceph_conf, ceph_pool, ceph_user)
 
 def perform_unittests():
     """
@@ -119,8 +131,8 @@ def perform_unittests():
 
     """
     tests = unittest.TestLoader().discover('.')
-    unittest.runner.TextTestRunner(verbosity=2, buffer=False).run(tests)
-    # unittest.runner.TextTestRunner(verbosity=2, buffer=True).run(tests)
+    # unittest.runner.TextTestRunner(verbosity=2, buffer=False).run(tests)
+    unittest.runner.TextTestRunner(verbosity=2, buffer=True).run(tests)
 
     sys.exit("--- Performed unittests, exiting ---")
 
@@ -129,4 +141,4 @@ if __name__ == "__main__":
     if args.test:
         perform_unittests()
     setup_logging(args.log)
-    start_proxy(args)
+    start_tasks.start_tasks(args)

@@ -16,7 +16,9 @@ class Test_Loggers(unittest.TestCase):
     def setUp(self):
         pass
     def tearDown(self):
-        pass
+        sl("quiet")
+        bl("quiet")
+        cl("quiet")
 
     def test_instances(self):
         """loggers are singletons

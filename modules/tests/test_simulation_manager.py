@@ -1,27 +1,43 @@
 #!/usr/bin/env python3
 """
-Test local_data_instance
+Test the receiver routine.
 
 """
-import time
 import unittest
-import multiprocessing
-
 try:
-    # from modules.local_data_instance import DataCopy
-    from modules.local_data_manager import LocalDataManager
+    from modules.simulation_manager import SimulationManager
 except ImportError:
     import sys
     sys.path.append('../..')
-    # from modules.local_data_instance import DataCopy
-    from modules.local_data_manager import LocalDataManager
+    from modules.simulation_manager import SimulationManager
+
+from modules.local_data_manager import LocalDataManager
 
 from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
-class Test_Local_Data_Instance(unittest.TestCase):
+import multiprocessing
+import asyncio
+import socket
+import time
+import struct
+from itertools import repeat
+
+def send_data(namespace, filename, arbitrary_hash):
+    entry = "{}\t{}\t{}".format(namespace, filename, arbitrary_hash)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect(("", 8010))
+        s.send(entry.encode())
+
+
+class Test_SimulationManager(unittest.TestCase):
+
     def setUp(self):
 
+        sl("debug")
         cl("debug")
+
+        host = ""
+        port = 8010
 
         # adding a file to the local data copy
         self.localdata_add_file_queue = multiprocessing.Queue()
@@ -54,112 +70,37 @@ class Test_Local_Data_Instance(unittest.TestCase):
                 self.localdata_get_index_pipe_remote
             )
         )
-        self.localdata_manager.start()
 
-        # self.dc = DataCopy()
+        self.simulation_manager = multiprocessing.Process(
+            target=SimulationManager,
+            args=(
+                host,
+                port,
+                self.localdata_add_file_queue,
+            )
+        )
+
+        self.localdata_manager.start()
+        self.simulation_manager.start()
+        time.sleep(.1)
 
     def tearDown(self):
-        try:
-            self.localdata_manager.terminate()
-        except:
-            pass
-        # self.dc._reset()
-        # del self.dc
 
-    def test_add_file_to_queue(self):
-        """add file to queue and check if it gets checked in
+        self.localdata_manager.terminate()
+        self.simulation_manager.terminate()
+
+    def test_drop_one_file(self):
+        """registers a file in the local data copy after info came via socket
 
         """
-        key = {"namespace": "some_namespace", "key": "universe.fo.nodes@0000000001.000000", "sha1sum": ""}
-        namespace = "some_namespace"
-        expected_index = {'some_namespace': {'0000000001.000000': {'nodes': {'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}}}}
-        expected_ns_index = {'0000000001.000000': {'nodes': {'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}}}
+        pkg = "some_namespace\tuniverse.fo.nodes@0000000001.000000\t"
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect(("", 8010))
+            s.send(pkg.encode())
+            time.sleep(.1)
 
-        different_key = {"namespace": "some_namespace        1", "key": "universe.fo.nodes@0000000001.000000", "sha1sum": ""}
-        different_expected_index = {'some_namespace        1': {'0000000001.000000': {'nodes': {'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}}}}
-        different_expected_ns_index = {'0000000001.000000': {'nodes': {'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}}}
-
-        self.localdata_add_file_queue.put(key)
-
-        self.localdata_check_file_event.clear()
-        self.localdata_check_file_pipe_local.send(key)
-        while not self.localdata_check_file_event.wait(1):
-            pass
-        else:
-            if self.localdata_check_file_pipe_local.poll():
-                self.assertTrue(self.localdata_check_file_pipe_local.recv())
-
-        self.localdata_check_file_event.clear()
-        self.localdata_check_file_pipe_local.send(different_key)
-        while not self.localdata_check_file_event.wait(1):
-            pass
-        else:
-            if self.localdata_check_file_pipe_local.poll():
-                self.assertFalse(self.localdata_check_file_pipe_local.recv())
-
-        self.localdata_get_index_pipe_local.send(None)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_index)
-                self.assertNotEqual(res, different_expected_index)
-
-        self.localdata_get_index_pipe_local.send(namespace)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_ns_index)
-                self.assertEqual(res, different_expected_ns_index)  # without the different namespace they will be identical
-
-    def test_reset_instance(self):
-        """killing the process resets the instance
-
-        """
-        key = {"namespace": "some_namespace", "key": "universe.fo.nodes@0000000001.000000", "sha1sum": ""}
-        namespace = "some_namespace"
-        expected_index = {'some_namespace': {'0000000001.000000': {'nodes': {'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}}}}
-        expected_ns_index = {'0000000001.000000': {'nodes': {'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}}}
-
-        self.localdata_add_file_queue.put(key)
-
-        self.localdata_check_file_event.clear()
-        self.localdata_check_file_pipe_local.send(key)
-        while not self.localdata_check_file_event.wait(1):
-            pass
-        else:
-            if self.localdata_check_file_pipe_local.poll():
-                self.assertTrue(self.localdata_check_file_pipe_local.recv())
-
-        self.localdata_get_index_pipe_local.send(None)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_index)
-
-        self.localdata_get_index_pipe_local.send(namespace)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_ns_index)
-
-    def test_add_every_typical_filetype(self):
-        """add all possible file types and check for them in the index
+    def test_drop_many_files_serial(self):
+        """registers many files in the local data copy after info came via socket (serial)
 
         """
         namespace = "some_namespace"
@@ -231,13 +172,33 @@ class Test_Local_Data_Instance(unittest.TestCase):
                 nodes,
                 elements_c3d6, elements_c3d8,
                 nodal_field,
+                    elemental_field_c3d6, elemental_field_c3d8,
+                surface_skin_c3d6, surface_skin_c3d8,
+                elset_c3d6, elset_c3d8
+        ]:
+            entry = "{}\t{}\t{}".format(namespace, filename, arbitraty_hash)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.connect(("", 8010))
+                s.send(entry.encode())
+        time.sleep(.01)
+
+        for filename in [
+                nodes,
+                elements_c3d6, elements_c3d8,
+                nodal_field,
                 elemental_field_c3d6, elemental_field_c3d8,
                 surface_skin_c3d6, surface_skin_c3d8,
                 elset_c3d6, elset_c3d8
         ]:
             entry = {"namespace": namespace, "key": filename, "sha1sum": arbitraty_hash}
-            self.localdata_add_file_queue.put(entry)
-        time.sleep(.01)          # wait for queue
+
+            self.localdata_check_file_event.clear()
+            self.localdata_check_file_pipe_local.send(entry)
+            while not self.localdata_check_file_event.wait(1):
+                pass
+            else:
+                if self.localdata_check_file_pipe_local.poll():
+                    self.assertTrue(self.localdata_check_file_pipe_local.recv())
 
         self.localdata_get_index_pipe_local.send(None)
         self.localdata_get_index_event.set()
@@ -259,18 +220,8 @@ class Test_Local_Data_Instance(unittest.TestCase):
                 self.localdata_index_avail_event.clear()
                 self.assertEqual(res, expected_ns_res)
 
-        self.localdata_get_index_pipe_local.send("namespace_non_existent")
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertIsNone(res)
-
-    def test_files_are_present(self):
-        """add all possible file types and check for them in the index
+    def test_drop_many_files_parallel(self):
+        """registers many files in the local data copy after info came via socket (parallel)
 
         """
         namespace = "some_namespace"
@@ -286,17 +237,71 @@ class Test_Local_Data_Instance(unittest.TestCase):
         elset_c3d8 = "universe.fo.elset.c3d8@0000000001.000000"
         arbitraty_hash = ""
 
-        for filename in [
+        expected_res = {
+            namespace: {
+                '0000000001.000000': {
+                    'nodes': {
+                        'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''
+                    },
+                    'elements': {
+                        'c3d6': {
+                            'object_key': 'universe.fo.elements.c3d6@0000000001.000000', 'sha1sum': ''
+                        },
+                        'c3d8': {
+                            'object_key': 'universe.fo.elements.c3d8@0000000001.000000', 'sha1sum': ''
+                        }
+                    },
+                    'nodal': {
+                        'fieldname': {
+                            'object_key': 'universe.fo.nodal.fieldname@0000000001.000000', 'sha1sum': ''
+                        }
+                    },
+                    'elemental': {
+                        'fieldname': {
+                            'c3d6': {
+                                'object_key': 'universe.fo.elemental.c3d6.fieldname@0000000001.000000', 'sha1sum': ''
+                            },
+                            'c3d8': {
+                                'object_key': 'universe.fo.elemental.c3d8.fieldname@0000000001.000000', 'sha1sum': ''
+                            }
+                        }
+                    },
+                    'skin': {
+                        'c3d6': {
+                            'object_key': 'universe.fo.skin.c3d6@0000000001.000000', 'sha1sum': ''
+                        },
+                        'c3d8': {
+                            'object_key': 'universe.fo.skin.c3d8@0000000001.000000', 'sha1sum': ''
+                        }
+                    },
+                    'elset': {
+                        '': {
+                            'c3d6': {
+                                'object_key': 'universe.fo.elset.c3d6@0000000001.000000', 'sha1sum': ''
+                            },
+                            'c3d8': {
+                                'object_key': 'universe.fo.elset.c3d8@0000000001.000000', 'sha1sum': ''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        expected_ns_res = expected_res[namespace]
+
+        filenames = [
                 nodes,
                 elements_c3d6, elements_c3d8,
                 nodal_field,
-                elemental_field_c3d6, elemental_field_c3d8,
+                    elemental_field_c3d6, elemental_field_c3d8,
                 surface_skin_c3d6, surface_skin_c3d8,
                 elset_c3d6, elset_c3d8
-        ]:
-            entry = {"namespace": namespace, "key": filename, "sha1sum": arbitraty_hash}
-            self.localdata_add_file_queue.put(entry)
-        time.sleep(.01)          # wait for queue
+        ]
+
+        with multiprocessing.Pool(10) as mpool:
+            mpool.starmap(send_data, zip(repeat(namespace), filenames, repeat(arbitraty_hash)))
+
+        time.sleep(.01)
 
         for filename in [
                 nodes,
@@ -315,6 +320,27 @@ class Test_Local_Data_Instance(unittest.TestCase):
             else:
                 if self.localdata_check_file_pipe_local.poll():
                     self.assertTrue(self.localdata_check_file_pipe_local.recv())
+
+        self.localdata_get_index_pipe_local.send(None)
+        self.localdata_get_index_event.set()
+        while not self.localdata_index_avail_event.wait(1):
+            pass
+        else:
+            if self.localdata_get_index_pipe_local.poll():
+                res = self.localdata_get_index_pipe_local.recv()
+                self.localdata_index_avail_event.clear()
+                self.assertEqual(res, expected_res)
+
+        self.localdata_get_index_pipe_local.send(namespace)
+        self.localdata_get_index_event.set()
+        while not self.localdata_index_avail_event.wait(1):
+            pass
+        else:
+            if self.localdata_get_index_pipe_local.poll():
+                res = self.localdata_get_index_pipe_local.recv()
+                self.localdata_index_avail_event.clear()
+                self.assertEqual(res, expected_ns_res)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

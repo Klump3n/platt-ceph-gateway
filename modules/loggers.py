@@ -113,7 +113,7 @@ class BaseLogger(object):
 
 
 class CoreLog(BaseLogger):
-    def __new__(cls, logging_level=None):
+    def __init__(self, logging_level=None):
         super().__init__("CORE", logging_level)
 
 class SimulationLog(BaseLogger):
@@ -121,5 +121,5 @@ class SimulationLog(BaseLogger):
         super().__init__("SIMULATION", logging_level)
 
 class BackendLog(BaseLogger):
-    def __new__(cls, logging_level=None):
+    def __init__(self, logging_level=None):
         super().__init__("BACKEND", logging_level)

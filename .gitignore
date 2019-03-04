@@ -108,3 +108,5 @@ auto/
 
 # unignore rados files
 !rados/*
+
+.radosoutput/
