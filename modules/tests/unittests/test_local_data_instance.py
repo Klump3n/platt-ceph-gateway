@@ -12,7 +12,7 @@ try:
     from modules.local_data_manager import LocalDataManager
 except ImportError:
     import sys
-    sys.path.append('../..')
+    sys.path.append('../../..')
     # from modules.local_data_instance import DataCopy
     from modules.local_data_manager import LocalDataManager
 

@@ -10,7 +10,7 @@ try:
     import modules.ceph_interface as ci
 except ImportError:
     import sys
-    sys.path.append('../..')
+    sys.path.append('../../..')
     import modules.ceph_interface as ci
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl

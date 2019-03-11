@@ -13,7 +13,7 @@ try:
     from modules.proxy_manager import ProxyManager
 except ImportError:
     import sys
-    sys.path.append('../..')
+    sys.path.append('../../..')
     from modules.proxy_manager import ProxyManager
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """
-Test the receiver routine.
+Test the simulation backend.
+
+That is the part that gets the updates about new files that are checked into
+ceph.
 
 """
 import unittest
@@ -8,13 +11,12 @@ try:
     from modules.simulation_manager import SimulationManager
 except ImportError:
     import sys
-    sys.path.append('../..')
+    sys.path.append('../../..')
     from modules.simulation_manager import SimulationManager
-
-from modules.local_data_manager import LocalDataManager
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
+import queue
 import multiprocessing
 import asyncio
 import socket
@@ -42,62 +44,44 @@ class Test_SimulationManager(unittest.TestCase):
         # adding a file to the local data copy
         self.localdata_add_file_queue = multiprocessing.Queue()
 
-        # see if if file is in the local data copy
-        self.localdata_check_file_pipe = multiprocessing.Pipe()
-        (
-            self.localdata_check_file_pipe_local,
-            self.localdata_check_file_pipe_remote
-        ) = self.localdata_check_file_pipe
-        self.localdata_check_file_event = multiprocessing.Event()
-
-        # get the local data copy for a timestep
-        self.localdata_get_index_event = multiprocessing.Event()
-        self.localdata_index_avail_event = multiprocessing.Event()
-        self.localdata_get_index_pipe = multiprocessing.Pipe()
-        (
-            self.localdata_get_index_pipe_local,
-            self.localdata_get_index_pipe_remote
-        ) = self.localdata_get_index_pipe
-
-        self.localdata_manager = multiprocessing.Process(
-            target=LocalDataManager,
-            args=(
-                self.localdata_add_file_queue,
-                self.localdata_check_file_event,
-                self.localdata_check_file_pipe_remote,
-                self.localdata_get_index_event,
-                self.localdata_index_avail_event,
-                self.localdata_get_index_pipe_remote
-            )
-        )
+        # adding a file to the local data copy
+        self.backend_add_file_queue = multiprocessing.Queue()
 
         self.simulation_manager = multiprocessing.Process(
             target=SimulationManager,
             args=(
                 host,
                 port,
-                self.localdata_add_file_queue,
+                self.backend_add_file_queue,
+                self.localdata_add_file_queue
             )
         )
 
-        self.localdata_manager.start()
         self.simulation_manager.start()
         time.sleep(.1)
 
     def tearDown(self):
-
-        self.localdata_manager.terminate()
         self.simulation_manager.terminate()
 
     def test_drop_one_file(self):
-        """registers a file in the local data copy after info came via socket
+        """send one file into the simulation and receive it in both queues
 
         """
         pkg = "some_namespace\tuniverse.fo.nodes@0000000001.000000\t"
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect(("", 8010))
             s.send(pkg.encode())
-            time.sleep(.1)
+            time.sleep(.01)
+        datacopy_queue_val = self.localdata_add_file_queue.get(.1)
+        self.assertEqual(
+            datacopy_queue_val,
+            {'namespace': 'some_namespace', 'key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}
+        )
+        backend_queue_val = self.backend_add_file_queue.get(.1)
+        self.assertEqual(
+            backend_queue_val,
+            {'namespace': 'some_namespace', 'key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}
+        )
 
     def test_drop_many_files_serial(self):
         """registers many files in the local data copy after info came via socket (serial)
@@ -116,58 +100,6 @@ class Test_SimulationManager(unittest.TestCase):
         elset_c3d8 = "universe.fo.elset.c3d8@0000000001.000000"
         arbitraty_hash = ""
 
-        expected_res = {
-            namespace: {
-                '0000000001.000000': {
-                    'nodes': {
-                        'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''
-                    },
-                    'elements': {
-                        'c3d6': {
-                            'object_key': 'universe.fo.elements.c3d6@0000000001.000000', 'sha1sum': ''
-                        },
-                        'c3d8': {
-                            'object_key': 'universe.fo.elements.c3d8@0000000001.000000', 'sha1sum': ''
-                        }
-                    },
-                    'nodal': {
-                        'fieldname': {
-                            'object_key': 'universe.fo.nodal.fieldname@0000000001.000000', 'sha1sum': ''
-                        }
-                    },
-                    'elemental': {
-                        'fieldname': {
-                            'c3d6': {
-                                'object_key': 'universe.fo.elemental.c3d6.fieldname@0000000001.000000', 'sha1sum': ''
-                            },
-                            'c3d8': {
-                                'object_key': 'universe.fo.elemental.c3d8.fieldname@0000000001.000000', 'sha1sum': ''
-                            }
-                        }
-                    },
-                    'skin': {
-                        'c3d6': {
-                            'object_key': 'universe.fo.skin.c3d6@0000000001.000000', 'sha1sum': ''
-                        },
-                        'c3d8': {
-                            'object_key': 'universe.fo.skin.c3d8@0000000001.000000', 'sha1sum': ''
-                        }
-                    },
-                    'elset': {
-                        '': {
-                            'c3d6': {
-                                'object_key': 'universe.fo.elset.c3d6@0000000001.000000', 'sha1sum': ''
-                            },
-                            'c3d8': {
-                                'object_key': 'universe.fo.elset.c3d8@0000000001.000000', 'sha1sum': ''
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        expected_ns_res = expected_res[namespace]
-
         for filename in [
                 nodes,
                 elements_c3d6, elements_c3d8,
@@ -182,43 +114,30 @@ class Test_SimulationManager(unittest.TestCase):
                 s.send(entry.encode())
         time.sleep(.01)
 
-        for filename in [
-                nodes,
-                elements_c3d6, elements_c3d8,
-                nodal_field,
-                elemental_field_c3d6, elemental_field_c3d8,
-                surface_skin_c3d6, surface_skin_c3d8,
-                elset_c3d6, elset_c3d8
-        ]:
-            entry = {"namespace": namespace, "key": filename, "sha1sum": arbitraty_hash}
+        expected_vals_datacopy = [
+            {'namespace': 'some_namespace', 'key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elements.c3d6@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elements.c3d8@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.nodal.fieldname@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elemental.c3d6.fieldname@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elemental.c3d8.fieldname@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.skin.c3d6@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.skin.c3d8@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elset.c3d6@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elset.c3d8@0000000001.000000", 'sha1sum': ''}
+        ]
+        expected_vals_backend = expected_vals_datacopy.copy()
 
-            self.localdata_check_file_event.clear()
-            self.localdata_check_file_pipe_local.send(entry)
-            while not self.localdata_check_file_event.wait(1):
-                pass
-            else:
-                if self.localdata_check_file_pipe_local.poll():
-                    self.assertTrue(self.localdata_check_file_pipe_local.recv())
+        # check that elements are contained in the list
+        while not expected_vals_datacopy == []:
+            datacopy_val = self.localdata_add_file_queue.get(.1)
+            self.assertIn(datacopy_val, expected_vals_datacopy)
+            expected_vals_datacopy.remove(datacopy_val)
 
-        self.localdata_get_index_pipe_local.send(None)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_res)
-
-        self.localdata_get_index_pipe_local.send(namespace)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_ns_res)
+        while not expected_vals_backend == []:
+            backend_val = self.backend_add_file_queue.get(.1)
+            self.assertIn(backend_val, expected_vals_backend)
+            expected_vals_backend.remove(backend_val)
 
     def test_drop_many_files_parallel(self):
         """registers many files in the local data copy after info came via socket (parallel)
@@ -237,58 +156,6 @@ class Test_SimulationManager(unittest.TestCase):
         elset_c3d8 = "universe.fo.elset.c3d8@0000000001.000000"
         arbitraty_hash = ""
 
-        expected_res = {
-            namespace: {
-                '0000000001.000000': {
-                    'nodes': {
-                        'object_key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''
-                    },
-                    'elements': {
-                        'c3d6': {
-                            'object_key': 'universe.fo.elements.c3d6@0000000001.000000', 'sha1sum': ''
-                        },
-                        'c3d8': {
-                            'object_key': 'universe.fo.elements.c3d8@0000000001.000000', 'sha1sum': ''
-                        }
-                    },
-                    'nodal': {
-                        'fieldname': {
-                            'object_key': 'universe.fo.nodal.fieldname@0000000001.000000', 'sha1sum': ''
-                        }
-                    },
-                    'elemental': {
-                        'fieldname': {
-                            'c3d6': {
-                                'object_key': 'universe.fo.elemental.c3d6.fieldname@0000000001.000000', 'sha1sum': ''
-                            },
-                            'c3d8': {
-                                'object_key': 'universe.fo.elemental.c3d8.fieldname@0000000001.000000', 'sha1sum': ''
-                            }
-                        }
-                    },
-                    'skin': {
-                        'c3d6': {
-                            'object_key': 'universe.fo.skin.c3d6@0000000001.000000', 'sha1sum': ''
-                        },
-                        'c3d8': {
-                            'object_key': 'universe.fo.skin.c3d8@0000000001.000000', 'sha1sum': ''
-                        }
-                    },
-                    'elset': {
-                        '': {
-                            'c3d6': {
-                                'object_key': 'universe.fo.elset.c3d6@0000000001.000000', 'sha1sum': ''
-                            },
-                            'c3d8': {
-                                'object_key': 'universe.fo.elset.c3d8@0000000001.000000', 'sha1sum': ''
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        expected_ns_res = expected_res[namespace]
-
         filenames = [
                 nodes,
                 elements_c3d6, elements_c3d8,
@@ -303,44 +170,30 @@ class Test_SimulationManager(unittest.TestCase):
 
         time.sleep(.01)
 
-        for filename in [
-                nodes,
-                elements_c3d6, elements_c3d8,
-                nodal_field,
-                elemental_field_c3d6, elemental_field_c3d8,
-                surface_skin_c3d6, surface_skin_c3d8,
-                elset_c3d6, elset_c3d8
-        ]:
-            entry = {"namespace": namespace, "key": filename, "sha1sum": arbitraty_hash}
+        expected_vals_datacopy = [
+            {'namespace': 'some_namespace', 'key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elements.c3d6@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elements.c3d8@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.nodal.fieldname@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elemental.c3d6.fieldname@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elemental.c3d8.fieldname@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.skin.c3d6@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.skin.c3d8@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elset.c3d6@0000000001.000000", 'sha1sum': ''},
+            {'namespace': 'some_namespace', 'key': "universe.fo.elset.c3d8@0000000001.000000", 'sha1sum': ''}
+        ]
+        expected_vals_backend = expected_vals_datacopy.copy()
 
-            self.localdata_check_file_event.clear()
-            self.localdata_check_file_pipe_local.send(entry)
-            while not self.localdata_check_file_event.wait(1):
-                pass
-            else:
-                if self.localdata_check_file_pipe_local.poll():
-                    self.assertTrue(self.localdata_check_file_pipe_local.recv())
+        # check that elements are contained in the list
+        while not expected_vals_datacopy == []:
+            datacopy_val = self.localdata_add_file_queue.get(.1)
+            self.assertIn(datacopy_val, expected_vals_datacopy)
+            expected_vals_datacopy.remove(datacopy_val)
 
-        self.localdata_get_index_pipe_local.send(None)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_res)
-
-        self.localdata_get_index_pipe_local.send(namespace)
-        self.localdata_get_index_event.set()
-        while not self.localdata_index_avail_event.wait(1):
-            pass
-        else:
-            if self.localdata_get_index_pipe_local.poll():
-                res = self.localdata_get_index_pipe_local.recv()
-                self.localdata_index_avail_event.clear()
-                self.assertEqual(res, expected_ns_res)
-
+        while not expected_vals_backend == []:
+            backend_val = self.backend_add_file_queue.get(.1)
+            self.assertIn(backend_val, expected_vals_backend)
+            expected_vals_backend.remove(backend_val)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

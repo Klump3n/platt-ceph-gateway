@@ -9,12 +9,17 @@ import asyncio
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 class SimulationManager(object):
-    def __init__(self, host, port, localdata_add_file_queue):
+    def __init__(
+            self, host, port,
+            queue_sim_backend_new_file,
+            queue_sim_datacopy_new_file
+    ):
 
         self.host = host
         self.port = port
 
-        self.localdata_add_file_queue = localdata_add_file_queue
+        self.queue_sim_datacopy_new_file = queue_sim_datacopy_new_file
+        self.queue_sim_backend_new_file = queue_sim_backend_new_file
 
         self.loop = asyncio.get_event_loop()
         self.coro = asyncio.start_server(
@@ -56,7 +61,7 @@ class SimulationManager(object):
         sl.debug('Connection established from {}:{}'.format(p_host, p_port))
 
         try:
-            await self.conn_data(reader, writer, self.localdata_add_file_queue)
+            await self.conn_data(reader, writer)
 
         except Exception as e:
             sl.error("Exception: {}".format(e))
@@ -73,7 +78,7 @@ class SimulationManager(object):
         sl.debug("Called 'rd_data(reader)'")
         return await reader.read(1024)
 
-    async def conn_data(self, reader, writer, localdata_add_file_queue):
+    async def conn_data(self, reader, writer):
         """
         Read 1kB of string data and enter it into the local data copy
 
@@ -103,11 +108,17 @@ class SimulationManager(object):
                 print(data)
                 writer.close()
                 return
+
             namespace = data_tab_split[0]
             key = data_tab_split[1]
             sha1sum = data_tab_split[2]
             entry = {"namespace": namespace, "key": key, "sha1sum": sha1sum}
-            localdata_add_file_queue.put(entry)
+
+            # drop the dictionary into the queues to the backend and the local
+            # data copy
+            self.queue_sim_backend_new_file.put(entry)
+            self.queue_sim_datacopy_new_file.put(entry)
+
         except Exception as e:
             sl.error("Exception: {}".format(e))
         finally:
