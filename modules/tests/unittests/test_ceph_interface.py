@@ -13,7 +13,7 @@ except ImportError:
     sys.path.append('../..')
     import modules.ceph_interface as ci
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 class Test_Ceph_Interface(unittest.TestCase):
     def setUp(self):

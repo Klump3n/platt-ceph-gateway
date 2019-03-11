@@ -6,7 +6,7 @@ Manages the local copy of the data on the ceph cluster.
 import queue
 import multiprocessing
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 class LocalDataManager(object):
     """

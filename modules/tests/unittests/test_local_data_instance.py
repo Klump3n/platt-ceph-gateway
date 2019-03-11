@@ -16,7 +16,7 @@ except ImportError:
     # from modules.local_data_instance import DataCopy
     from modules.local_data_manager import LocalDataManager
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 class Test_Local_Data_Instance(unittest.TestCase):
     def setUp(self):

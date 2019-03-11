@@ -13,7 +13,7 @@ except ImportError:
 
 from modules.local_data_manager import LocalDataManager
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 import multiprocessing
 import asyncio

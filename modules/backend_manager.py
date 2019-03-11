@@ -5,7 +5,7 @@ Manages the operations of the backend.
 """
 import asyncio
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 import modules.backend_interface as bi
 

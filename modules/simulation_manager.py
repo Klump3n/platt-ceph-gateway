@@ -6,7 +6,7 @@ Manages the operations of the simulation.
 import struct
 import asyncio
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 class SimulationManager(object):
     def __init__(self, host, port, localdata_add_file_queue):

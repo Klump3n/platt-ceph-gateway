@@ -8,7 +8,7 @@ import unittest
 import argparse
 import pathlib
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 import modules.start_tasks as start_tasks
 
 def parse_commandline():

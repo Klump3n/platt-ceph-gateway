@@ -6,11 +6,11 @@ Test integration of ceph interface and local_data_instance
 import unittest
 
 try:
-    from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+    from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 except ImportError:
     import sys
     sys.path.append('../..')
-    from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+    from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 class Test_Loggers(unittest.TestCase):
     def setUp(self):

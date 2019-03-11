@@ -14,7 +14,7 @@ except ImportError:
     print("\n\nThis module needs a working python3.5 environment!\n\n")
     raise
 
-from modules.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 
 def get_namespaces(ceph_conf, ceph_pool, ceph_user):
