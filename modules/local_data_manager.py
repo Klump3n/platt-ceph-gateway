@@ -19,49 +19,114 @@ class LocalDataManager(object):
     _file_queue = None
 
     def __new__(cls,
-                localdata_file_queue,
-                localdata_file_check_event,
-                localdata_file_check_pipe_local,
-                localdata_get_index_event,
-                localdata_index_avail_event,
-                localdata_index_pipe_local
+                queue_sim_datacopy_new_file,
+                queue_datacopy_ceph_request_hash_for_new_file,
+                queue_datacopy_ceph_answer_hash_for_new_file,
+                queue_datacopy_backend_new_file_and_hash,
+                event_datacopy_backend_get_index,
+                event_datacopy_backend_index_ready,
+                pipe_this_end_datacopy_backend_index,
+                event_datacopy_ceph_update_index,
+                queue_datacopy_ceph_filename_and_hash
     ):
         cl.info("Starting LocalDataManager")
         if not cls._instance:
             cls._instance = cls
             cls.__init__(cls,
-                         localdata_file_queue,
-                         localdata_file_check_event,
-                         localdata_file_check_pipe_local,
-                         localdata_get_index_event,
-                         localdata_index_avail_event,
-                         localdata_index_pipe_local
+                         queue_sim_datacopy_new_file,
+                         queue_datacopy_ceph_request_hash_for_new_file,
+                         queue_datacopy_ceph_answer_hash_for_new_file,
+                         queue_datacopy_backend_new_file_and_hash,
+                         event_datacopy_backend_get_index,
+                         event_datacopy_backend_index_ready,
+                         pipe_this_end_datacopy_backend_index,
+                         event_datacopy_ceph_update_index,
+                         queue_datacopy_ceph_filename_and_hash
             )
         return cls._instance
 
     def __init__(cls,
-                 localdata_file_queue,
-                 localdata_file_check_event,
-                 localdata_file_check_pipe_local,
-                 localdata_get_index_event,
-                 localdata_index_avail_event,
-                 localdata_index_pipe_local
+                 queue_sim_datacopy_new_file,
+                 queue_datacopy_ceph_request_hash_for_new_file,
+                 queue_datacopy_ceph_answer_hash_for_new_file,
+                 queue_datacopy_backend_new_file_and_hash,
+                 event_datacopy_backend_get_index,
+                 event_datacopy_backend_index_ready,
+                 pipe_this_end_datacopy_backend_index,
+                 event_datacopy_ceph_update_index,
+                 queue_datacopy_ceph_filename_and_hash
     ):
-        cls._localdata_file_queue = localdata_file_queue
 
-        # pipe is a 2-tuple; first is for receiving, second is for sending
-        cls._localdata_file_check_pipe_local = localdata_file_check_pipe_local
-        cls._localdata_file_check_event = localdata_file_check_event
+        # receive new file information from the simulation
+        cls._queue_sim_datacopy_new_file = queue_sim_datacopy_new_file
 
-        cls._localdata_get_index_event = localdata_get_index_event
-        cls._localdata_index_avail_event = localdata_index_avail_event
-        cls._localdata_index_pipe_local = localdata_index_pipe_local
+        # request a hash for the file
+        cls._queue_datacopy_ceph_request_hash_for_new_file = queue_datacopy_ceph_request_hash_for_new_file
+        cls._queue_datacopy_ceph_answer_hash_for_new_file = queue_datacopy_ceph_answer_hash_for_new_file
+
+        # forward file and hash to the backend
+        cls._queue_datacopy_backend_new_file_and_hash = queue_datacopy_backend_new_file_and_hash
+
+        # serve index requests from the backend
+        cls._event_datacopy_backend_get_index = event_datacopy_backend_get_index
+        cls._event_datacopy_backend_index_ready = event_datacopy_backend_index_ready
+        cls._pipe_this_end_datacopy_backend_index = pipe_this_end_datacopy_backend_index
+
+        # request the index from the ceph cluster
+        cls._event_datacopy_ceph_update_index = event_datacopy_ceph_update_index
+        cls._queue_datacopy_ceph_filename_and_hash = queue_datacopy_ceph_filename_and_hash
+
+
+
+        # cls._localdata_file_queue = localdata_file_queue
+
+        # # pipe is a 2-tuple; first is for receiving, second is for sending
+        # cls._localdata_file_check_pipe_local = localdata_file_check_pipe_local
+        # cls._localdata_file_check_event = localdata_file_check_event
+
+        # cls._localdata_get_index_event = localdata_get_index_event
+        # cls._localdata_index_avail_event = localdata_index_avail_event
+        # cls._localdata_index_pipe_local = localdata_index_pipe_local
 
         while True:
             try:
-                # try to read the queue
+                # try to read the queue for new files
                 try:
-                    new_file_dict = cls._localdata_file_queue.get(block=False)
+                    new_file_dict = cls._queue_sim_datacopy_new_file.get(block=False)
+                    namespace = new_file_dict["namespace"]
+                    key = new_file_dict["key"]
+                    sha1sum = new_file_dict["sha1sum"]
+
+                    # if we received a sha1sum we drop the file in the database
+                    if not sha1sum == "":
+                        cls.add_file(namespace, key, sha1sum)
+                    # else we ask ceph for the hash
+                    else:
+                        cls._queue_datacopy_ceph_request_hash_for_new_file.put(new_file_dict)
+                        # NOTE: If ceph does not answer this request we have to make sure that it still lands in the database
+                except queue.Empty:
+                    pass
+
+                # try to read the queue for the attempt to get the hash from ceph
+                try:
+                    new_file_dict = cls._queue_datacopy_ceph_answer_hash_for_new_file.get(block=False)
+                    namespace = new_file_dict["namespace"]
+                    key = new_file_dict["key"]
+                    sha1sum = new_file_dict["sha1sum"]
+                    # sha1sum might still be not set but what can we do now
+                    cls.add_file(namespace, key, sha1sum)
+                except queue.Empty:
+                    pass
+
+                # try serving the index
+                if cls._event_datacopy_backend_get_index.is_set():
+                    cls._event_datacopy_backend_get_index.clear()
+                    cls._pipe_this_end_datacopy_backend_index.send(cls.get_index())
+                    cls._event_datacopy_backend_index_ready.set()
+
+                # add whatever ceph is throwing at us to the local data copy
+                try:
+                    new_file_dict = cls._queue_datacopy_ceph_filename_and_hash.get(block=False)
                     namespace = new_file_dict["namespace"]
                     key = new_file_dict["key"]
                     sha1sum = new_file_dict["sha1sum"]
@@ -69,26 +134,26 @@ class LocalDataManager(object):
                 except queue.Empty:
                     pass
 
-                # try to read the file check connection
-                if cls._localdata_file_check_pipe_local.poll():
-                    file_check_dict = cls._localdata_file_check_pipe_local.recv()
-                    try:
-                        namespace = file_check_dict["namespace"]
-                        key = file_check_dict["key"]
-                        cls._localdata_file_check_pipe_local.send(cls.name_is_present(namespace, key))
-                        cls._localdata_file_check_event.set()
-                    except KeyError:
-                        pass
+                # # try to read the file check connection
+                # if cls._localdata_file_check_pipe_local.poll():
+                #     file_check_dict = cls._localdata_file_check_pipe_local.recv()
+                #     try:
+                #         namespace = file_check_dict["namespace"]
+                #         key = file_check_dict["key"]
+                #         cls._localdata_file_check_pipe_local.send(cls.name_is_present(namespace, key))
+                #         cls._localdata_file_check_event.set()
+                #     except KeyError:
+                #         pass
 
-                # try to read the get index connection
-                if cls._localdata_get_index_event.is_set():
-                    cls._localdata_get_index_event.clear()
-                    if cls._localdata_index_pipe_local.poll():
-                        return_index = cls._localdata_index_pipe_local.recv()
-                        cls._localdata_index_pipe_local.send(cls.get_index(return_index))
-                        cls._localdata_index_avail_event.set()
-                    else:
-                        pass
+                # # try to read the get index connection
+                # if cls._localdata_get_index_event.is_set():
+                #     cls._localdata_get_index_event.clear()
+                #     if cls._localdata_index_pipe_local.poll():
+                #         return_index = cls._localdata_index_pipe_local.recv()
+                #         cls._localdata_index_pipe_local.send(cls.get_index(return_index))
+                #         cls._localdata_index_avail_event.set()
+                #     else:
+                #         pass
 
 
             except KeyboardInterrupt:

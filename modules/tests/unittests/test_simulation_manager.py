@@ -44,15 +44,11 @@ class Test_SimulationManager(unittest.TestCase):
         # adding a file to the local data copy
         self.localdata_add_file_queue = multiprocessing.Queue()
 
-        # adding a file to the local data copy
-        self.backend_add_file_queue = multiprocessing.Queue()
-
         self.simulation_manager = multiprocessing.Process(
             target=SimulationManager,
             args=(
                 host,
                 port,
-                self.backend_add_file_queue,
                 self.localdata_add_file_queue
             )
         )
@@ -75,11 +71,6 @@ class Test_SimulationManager(unittest.TestCase):
         datacopy_queue_val = self.localdata_add_file_queue.get(.1)
         self.assertEqual(
             datacopy_queue_val,
-            {'namespace': 'some_namespace', 'key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}
-        )
-        backend_queue_val = self.backend_add_file_queue.get(.1)
-        self.assertEqual(
-            backend_queue_val,
             {'namespace': 'some_namespace', 'key': 'universe.fo.nodes@0000000001.000000', 'sha1sum': ''}
         )
 
@@ -134,11 +125,6 @@ class Test_SimulationManager(unittest.TestCase):
             self.assertIn(datacopy_val, expected_vals_datacopy)
             expected_vals_datacopy.remove(datacopy_val)
 
-        while not expected_vals_backend == []:
-            backend_val = self.backend_add_file_queue.get(.1)
-            self.assertIn(backend_val, expected_vals_backend)
-            expected_vals_backend.remove(backend_val)
-
     def test_drop_many_files_parallel(self):
         """registers many files in the local data copy after info came via socket (parallel)
 
@@ -189,11 +175,6 @@ class Test_SimulationManager(unittest.TestCase):
             datacopy_val = self.localdata_add_file_queue.get(.1)
             self.assertIn(datacopy_val, expected_vals_datacopy)
             expected_vals_datacopy.remove(datacopy_val)
-
-        while not expected_vals_backend == []:
-            backend_val = self.backend_add_file_queue.get(.1)
-            self.assertIn(backend_val, expected_vals_backend)
-            expected_vals_backend.remove(backend_val)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

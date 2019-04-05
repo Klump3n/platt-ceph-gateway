@@ -8,10 +8,10 @@ import asyncio
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
+
 class SimulationManager(object):
     def __init__(
             self, host, port,
-            queue_sim_backend_new_file,
             queue_sim_datacopy_new_file
     ):
 
@@ -19,7 +19,6 @@ class SimulationManager(object):
         self.port = port
 
         self.queue_sim_datacopy_new_file = queue_sim_datacopy_new_file
-        self.queue_sim_backend_new_file = queue_sim_backend_new_file
 
         self.loop = asyncio.get_event_loop()
         self.coro = asyncio.start_server(
@@ -114,9 +113,7 @@ class SimulationManager(object):
             sha1sum = data_tab_split[2]
             entry = {"namespace": namespace, "key": key, "sha1sum": sha1sum}
 
-            # drop the dictionary into the queues to the backend and the local
-            # data copy
-            self.queue_sim_backend_new_file.put(entry)
+            # drop the dictionary into the queue to the local data copy
             self.queue_sim_datacopy_new_file.put(entry)
 
         except Exception as e:
