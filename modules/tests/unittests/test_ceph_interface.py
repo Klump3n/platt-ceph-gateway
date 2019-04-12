@@ -29,6 +29,7 @@ class Test_Ceph_Interface(unittest.TestCase):
         # cl("debug")
         conf_path = pathlib.Path.home() / ".ccphi/simuser.ceph.conf"
         ns_k = ci.get_namespaces(str(conf_path), "simdata", "simuser")
+        print(ns_k)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
