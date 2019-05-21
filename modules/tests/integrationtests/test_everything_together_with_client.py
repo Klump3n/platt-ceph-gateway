@@ -314,6 +314,38 @@ class Test_Integrate_EVERYTHING(unittest.TestCase):
         self.assertIsNotNone(index)
         print(index.keys())
 
+    def test_client_get_data_file(self):
+        """make the client request simulation data
+
+        """
+        time.sleep(50)          # wait for the index to start up. might have to adjust this if the cluster grows... better mock that shit T_T
+
+        expected_list = []
+        namespace = "numsim_napf_tiefziehversuch"
+        filenames = [
+            "universe.fo.nodal.PE2@000000000.035000"
+        ]
+        expected_namespace = namespace
+        expected_object = filenames[0]
+        expected_sha1sum = "a27d7607165e65dba5b02de677a9fd4b1bfb5411"
+
+        for filename in filenames:
+            new_file = {"namespace": namespace, "key": filename}
+            expected_list.append({'todo': 'new_file', 'new_file': new_file})
+            self.file_name_request_client_queue.put(new_file)
+            time.sleep(.06)     # some time between new files
+        time.sleep(.005)          # wait for queue
+
+        for filename in filenames:
+            res = self.file_contents_name_hash_client_queue.get(True, 1)
+            ns = res["file_request"]["namespace"]
+            o = res["file_request"]["object"]
+            s = res["file_request"]["tags"]["sha1sum"]
+            self.assertEqual(ns, expected_namespace)
+            self.assertEqual(o, expected_object)
+            self.assertEqual(s, expected_sha1sum)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
 
