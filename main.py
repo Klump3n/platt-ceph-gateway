@@ -9,7 +9,7 @@ import argparse
 import pathlib
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
-from util.greet import greeting_artwork
+from util.greet import greeting
 
 import modules.start_tasks as start_tasks
 
@@ -64,40 +64,6 @@ def parse_commandline():
     args = parser.parse_args()
     return args
 
-# def build_local_index(ceph_conf, ceph_pool, ceph_user):
-#     """
-#     Build a local index of the data on the ceph cluster.
-
-#     """
-#     cl.info("Building local data index")
-#     dc = DataCopy()
-#     cl.info("loading list of namespaces from rados on command line")
-#     ceph_namespaces = ci.get_namespaces(ceph_conf, ceph_pool, ceph_user)
-#     cl.info("Getting index from ceph")
-#     for namespace in ceph_namespaces:
-#         cl.debug("loading index for namespace {}".format(namespace))
-#         namespace_index = ci.namespace_index(ceph_conf, ceph_pool, ceph_user, namespace)
-#         cl.debug("placing {} keys in local data copy ".format(len(namespace_index)))
-#         for key, val in namespace_index.items():
-#             try:
-#                 dc.add_file(namespace, key, val["sha1sum"])
-#             except KeyError:
-#                 dc.add_file(namespace, key, None)
-
-# def start_simulation_interface():
-#     """
-#     Start the interface for the simulation.
-
-#     """
-#     sl.info("Starting simulation interface")
-
-# def start_backend_interface():
-#     """
-#     Start the interface for the backend.
-
-#     """
-#     bl.info("Starting backend interface")
-
 def setup_logging(logging_level):
     """
     Setup the loggers.
@@ -110,44 +76,12 @@ def setup_logging(logging_level):
     bl(logging_level)           # setup backend logging
     bl.info("Started Backend logging with level '{}'".format(logging_level))
 
-# def start_proxy(args):
-#     """
-#     Start the proxy server.
-
-#     """
-#     # start the listening port for the simulation
-#     start_simulation_interface()
-
-#     # start the backend connection
-#     start_backend_interface()
-
-#     # create an instance of the local data copy
-#     ceph_conf = pathlib.Path(args.config)
-#     ceph_pool = args.pool
-#     ceph_user = args.user
-#     build_local_index(ceph_conf, ceph_pool, ceph_user)
-
 def greet():
     """
     Print a greeting to stdout.
 
     """
-    greeting = """
-                   a/
-          .   ?"'  aa/
-     "r   _wQQQQQQQQQ@      +----------------------------------+
-  "?"     QQQQQQQQQQQQ      |                                  |
-        ]ajQQQQQQQQQQga/    |  This is the platt proxy server  |
-        jQQQQQQQQQQQQQQP    |                                  |
-        QQQQQQQQQQQQQQ/     |   Connect the platt backend to   |
-            wQQWQQQQQQ'     |     receive simulation data.     |
-           _QQQWQQQQ?       |                                  |
-           jQQmQQQP'        +----------------------------------+
-           ???4WWQ'
-                )?
-    """
     print(greeting)
-    # print(greeting_artwork)
 
 def perform_unittests():
     """
