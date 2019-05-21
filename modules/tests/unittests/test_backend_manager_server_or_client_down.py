@@ -37,6 +37,13 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
         # receive at client
         self.new_file_client_queue = multiprocessing.Queue()
 
+        #
+        # a queue for returning the requested index
+        self.queue_datacopy_backend_index_data = multiprocessing.Queue()
+        #
+        # queue for index data on client side
+        self.queue_client_index_data = multiprocessing.Queue()
+
         # server and client side of index exchange
         # index request events
         self.get_index_server_event = multiprocessing.Event()
@@ -71,6 +78,14 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
 
         print()
 
+    def tearDown(self):
+        self.shutdown_backend_manager_event.set()
+        self.shutdown_client_event.set()
+        time.sleep(1)
+        self.shutdown_backend_manager_event.clear()
+        self.shutdown_client_event.clear()
+        time.sleep(1)
+
     def test_server_not_up(self):
         """Server has not been started
 
@@ -81,8 +96,9 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_client_queue,
                 self.get_index_client_event,
-                self.index_avail_client_event,
-                self.client_index_pipe_remote,
+                self.queue_client_index_data,
+                # self.index_avail_client_event,
+                # self.client_index_pipe_remote,
                 self.file_name_request_client_queue,
                 self.file_contents_name_hash_client_queue,
                 self.shutdown_client_event,
@@ -99,8 +115,9 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_server_queue,
                 self.get_index_server_event,
-                self.index_avail_server_event,
-                self.server_index_pipe_remote,
+                self.queue_datacopy_backend_index_data,
+                # self.index_avail_server_event,
+                # self.server_index_pipe_remote,
                 self.file_name_request_server_queue,
                 self.file_contents_name_hash_server_queue,
                 self.shutdown_backend_manager_event,
@@ -118,8 +135,8 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
             self.shutdown_client_event.set()
             time.sleep(.1)
             self.client.terminate()
-        except:
-            pass
+        except Exception as e:
+            print(e)
 
     def test_client_not_up(self):
         """Client has not been started (is never connecting)
@@ -131,8 +148,9 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_server_queue,
                 self.get_index_server_event,
-                self.index_avail_server_event,
-                self.server_index_pipe_remote,
+                self.queue_datacopy_backend_index_data,
+                # self.index_avail_server_event,
+                # self.server_index_pipe_remote,
                 self.file_name_request_server_queue,
                 self.file_contents_name_hash_server_queue,
                 self.shutdown_backend_manager_event,
@@ -144,6 +162,7 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
         self.new_file_server_queue.put("test")
         self.assertEqual(self.new_file_server_queue.get(), "test")
 
+        time.sleep(.5 + .1)      # init in backend mgr is .5 seconds
         # "test" should have been cleared out of the queue
         self.new_file_server_queue.put("test")
         time.sleep(.1)
@@ -170,8 +189,9 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_server_queue,
                 self.get_index_server_event,
-                self.index_avail_server_event,
-                self.server_index_pipe_remote,
+                self.queue_datacopy_backend_index_data,
+                # self.index_avail_server_event,
+                # self.server_index_pipe_remote,
                 self.file_name_request_server_queue,
                 self.file_contents_name_hash_server_queue,
                 self.shutdown_backend_manager_event,
@@ -185,8 +205,9 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_client_queue,
                 self.get_index_client_event,
-                self.index_avail_client_event,
-                self.client_index_pipe_remote,
+                self.queue_client_index_data,
+                # self.index_avail_client_event,
+                # self.client_index_pipe_remote,
                 self.file_name_request_client_queue,
                 self.file_contents_name_hash_client_queue,
                 self.shutdown_client_event,
@@ -218,8 +239,9 @@ class Test_BackendManager_ClientOrServerDown(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_client_queue,
                 self.get_index_client_event,
-                self.index_avail_client_event,
-                self.client_index_pipe_remote,
+                self.queue_client_index_data,
+                # self.index_avail_client_event,
+                # self.client_index_pipe_remote,
                 self.file_name_request_client_queue,
                 self.file_contents_name_hash_client_queue,
                 self.shutdown_client_event,

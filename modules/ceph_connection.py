@@ -384,6 +384,9 @@ class CephConnection(object):
         return_dict["object"] = obj_name
         return_dict["tags"] = tags_dict
         return_dict["value"] = objval
+        # import os
+        # return_dict["value"] = os.urandom(1024)
+        # print(type(return_dict["value"]))
 
         return return_dict
 

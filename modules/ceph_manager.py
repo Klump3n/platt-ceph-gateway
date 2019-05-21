@@ -17,6 +17,8 @@ class CephManager(object):
                  ceph_pool,
                  ceph_user,
 
+                 event_ceph_shutdown,
+
                  queue_datacopy_ceph_request_hash_for_new_file,
                  queue_datacopy_ceph_answer_hash_for_new_file,
 
@@ -30,6 +32,8 @@ class CephManager(object):
         self._ceph_conf = ceph_conf
         self._ceph_pool = ceph_pool
         self._ceph_user = ceph_user
+
+        self._event_ceph_shutdown = event_ceph_shutdown
 
         self._queue_datacopy_ceph_request_hash_for_new_file = (
             queue_datacopy_ceph_request_hash_for_new_file
@@ -60,6 +64,8 @@ class CephManager(object):
 
         # number of concurrent connections to the ceph cluster; pool size
         num_conns = 10          # at least 2
+
+        assert(num_conns > 1)
 
         self.conns = []
 
@@ -97,6 +103,11 @@ class CephManager(object):
             throttle_loop = True
 
             while True:
+
+                # check for ceph shutdown
+                if self._event_ceph_shutdown.is_set():
+                    self._event_ceph_process_shutdown.set()
+                    break
 
                 # first go through all the tasks and give them to the processes
                 #
@@ -198,7 +209,11 @@ class CephManager(object):
                 # get the hash for an object
                 try:
                     obj_hash = self._queue_ceph_process_object_hash.get(block=False)
-                    self._queue_datacopy_ceph_answer_hash_for_new_file.put(obj_hash)
+                    new_file_dict = dict()
+                    new_file_dict["namespace"] = obj_hash["namespace"]
+                    new_file_dict["key"] = obj_hash["object"]
+                    new_file_dict["sha1sum"] = obj_hash["tags"]["sha1sum"]
+                    self._queue_datacopy_ceph_answer_hash_for_new_file.put(new_file_dict)
                 except queue.Empty:
                     pass
 
@@ -214,7 +229,7 @@ class CephManager(object):
 
         except KeyboardInterrupt:
             # exit without errors
-            pass
+            self._event_ceph_process_shutdown.set()
 
         finally:
 

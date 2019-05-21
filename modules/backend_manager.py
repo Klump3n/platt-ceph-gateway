@@ -22,11 +22,13 @@ from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 class BackendManager(object):
     def __init__(self,
-                 host, port,
+                 host,
+                 port,
                  new_file_send_queue,
                  get_index_server_event,
-                 index_avail_server_event,
-                 index_server_pipe_remote,
+                 index_data_queue,
+                 # index_avail_server_event,
+                 # index_server_pipe_remote,
                  file_name_request_server_queue,
                  file_content_name_hash_server_queue,
                  shutdown_backend_manager_event
@@ -38,8 +40,9 @@ class BackendManager(object):
         # expose events, pipes and queues to the class
         self._new_file_send_queue = new_file_send_queue
         self._get_index_server_event = get_index_server_event
-        self._index_avail_server_event = index_avail_server_event
-        self._index_server_pipe_remote = index_server_pipe_remote
+        self._index_data_queue = index_data_queue
+        # self._index_avail_server_event = index_avail_server_event
+        # self._index_server_pipe_remote = index_server_pipe_remote
         self._file_name_request_server_queue = file_name_request_server_queue
         self._file_content_name_hash_server_queue = file_content_name_hash_server_queue
         self._shutdown_backend_manager_event = shutdown_backend_manager_event
@@ -66,26 +69,25 @@ class BackendManager(object):
         try:
             self._loop.run_forever()
         except KeyboardInterrupt:
-            self.stop()
+            pass                # quiet KeyboardInterrupt
         finally:
             bl.info("BackendManager stopped")
 
     def stop(self):
         bl.info("Stopping BackendManager")
 
-        self._loop.call_soon_threadsafe(self._loop.stop())
+        # await self._cancel()
 
-        pending = asyncio.Task.all_tasks()
-        for task in pending:
-            task.cancel()
+        try:
+            self._cancel_new_file_executor_event.set()
+        except AttributeError:
+            pass
+        try:
+            self._cancel_file_request_answer_executor_event.set()
+        except AttributeError:
+            pass
 
-        # queue_cleanup_task = self._loop.create_task(self._cancel())
-        # pending = asyncio.Task.all_tasks()
-        self._cancel_new_file_executor_event.set()
-        self._cancel_file_request_answer_executor_event.set()
-        # self._loop.call_soon_threadsafe(self._loop.stop())
         self._loop.call_soon_threadsafe(self._loop.close())
-
 
     async def _cancel(self):
 
@@ -94,8 +96,6 @@ class BackendManager(object):
         pending = asyncio.Task.all_tasks()
         for task in pending:
             task.cancel()
-
-
 
     async def _rw_handler(self, reader, writer):
         """
@@ -260,6 +260,8 @@ class BackendManager(object):
         Run this in a separate executor.
 
         """
+        time.sleep(.5)          # wait for start
+
         while True:
 
             # repeat 1000 times per second, acts as rate throttling
@@ -273,10 +275,10 @@ class BackendManager(object):
 
             if not self._index_connection_active:
                 self._get_index_server_event.clear()
-                self._index_avail_server_event.clear()
-                if self._index_server_pipe_remote.poll():
-                    # ... get it from the pipe
-                    self._index_server_pipe_remote.recv()
+                try:
+                    self._index_data_queue.get(False)
+                except queue.Empty:
+                    pass
 
             if not self._file_requests_connection_active:
                 try:
@@ -318,7 +320,7 @@ class BackendManager(object):
                 return
 
             bl.debug("Received {} for sending via socket".format(
-                new_file_in_queue.replace("\t", " ")))
+                new_file_in_queue))
 
             await self._inform_client_new_file(
                 reader, writer, new_file_in_queue)
@@ -357,7 +359,7 @@ class BackendManager(object):
 
         """
         bl.debug("Sending information about new file to client ({})".format(
-            new_file.replace("\t", " ")))
+            new_file))
 
         todo_val = "new_file"
         new_file_dictionary = {
@@ -397,14 +399,10 @@ class BackendManager(object):
                 # event)
                 self._get_index_server_event.set()
 
-                # if the index is available ...
-                if self._index_avail_server_event.wait(1):
-                    # ... get it from the pipe
-                    index = self._index_server_pipe_remote.recv()
-                    # reset the index event
-                    self._get_index_server_event.clear()
-                    # and send the index to the client
+                index = self._index_data_queue.get(True, 10)  # wait up to 10 seconds
+                if index:
                     await self._send_index_to_client(reader, writer, index)
+
 
     async def _send_index_to_client(self, reader, writer, index):
         """
@@ -441,11 +439,18 @@ class BackendManager(object):
             if not res:
                 await self.send_nack(writer)
                 return
-            bl.debug("Request for {} received".format(res.replace("\t", " ")))
+            bl.debug("Request for {} received".format(res))
             await self.send_ack(writer)
 
+            namespace = res["namespace"]
+            key = res["key"]
+            request_json = {
+                "namespace": namespace,
+                "key": key
+            }
+
             # drop the request in the queue for the proxy manager
-            self._file_name_request_server_queue.put(res)
+            self._file_name_request_server_queue.put(request_json)
 
 
 
@@ -516,8 +521,8 @@ class BackendManager(object):
         bl.debug("Sending file request answer via socket")
 
         # encode the binary data as base64 string and
-        file_dictionary["contents"] = base64.b64encode(
-            file_dictionary["contents"]).decode()
+        file_dictionary["value"] = base64.b64encode(
+            file_dictionary["value"]).decode()
 
         todo_val = "file_request"
         request_answer_dictionary = {

@@ -45,8 +45,8 @@ class Test_SimulationManager(unittest.TestCase):
         # adding a file to the local data copy
         self.localdata_add_file_queue = multiprocessing.Queue()
 
-        # adding a file to the local data copy
-        self.backend_add_file_queue = multiprocessing.Queue()
+        # # adding a file to the local data copy
+        # self.backend_add_file_queue = multiprocessing.Queue()
 
         # # see if if file is in the local data copy
         # self.localdata_check_file_pipe = multiprocessing.Pipe()
@@ -82,7 +82,7 @@ class Test_SimulationManager(unittest.TestCase):
             args=(
                 host,
                 port,
-                self.backend_add_file_queue,
+                # self.backend_add_file_queue,
                 self.localdata_add_file_queue
             )
         )

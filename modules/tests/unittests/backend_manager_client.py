@@ -27,8 +27,9 @@ class Client(object):
             host, port,
             new_file_receive_queue,
             get_index_event,
-            index_avail_event,
-            index_pipe_remote,
+            index_data_queue,
+            # index_avail_event,
+            # index_pipe_remote,
             file_name_request_client_queue,
             file_contents_name_hash_client_queue,
             shutdown_client_event
@@ -41,8 +42,9 @@ class Client(object):
         # set up queues and events
         self._new_file_receive_queue = new_file_receive_queue
         self._get_index_event = get_index_event
-        self._index_avail_event = index_avail_event
-        self._index_pipe_remote = index_pipe_remote
+        self._index_data_queue = index_data_queue
+        # self._index_avail_event = index_avail_event
+        # self._index_pipe_remote = index_pipe_remote
         self._file_name_request_client_queue = file_name_request_client_queue
         self._file_contents_name_hash_client_queue = file_contents_name_hash_client_queue
         self._shutdown_client_event = shutdown_client_event
@@ -305,17 +307,18 @@ class Client(object):
         Watch index events in a separate executor.
 
         """
-        new_file_in_queue = await self._loop.run_in_executor(
+        get_index_event = await self._loop.run_in_executor(
             None, self.index_event_executor)
 
-        if not new_file_in_queue:
+        if not get_index_event:
             return None
 
         cl.info("Index request received")
 
         index = await self.get_index(reader, writer)
-        self._index_pipe_remote.send(index)
-        self._index_avail_event.set()
+        self._index_data_queue.put(index)
+        # self._index_pipe_remote.send(index)
+        # self._index_avail_event.set()
 
         return True             # something other than None
 
@@ -333,6 +336,7 @@ class Client(object):
             get_index_event = self._get_index_event.wait(.1)
 
             if get_index_event:
+
                 self._get_index_event.clear()
                 return get_index_event
             else:
@@ -345,13 +349,15 @@ class Client(object):
         """
         dictionary = {"todo": "index"}
         if await self.send_connection(reader, writer, dictionary):
+
             index = await self.read_data(reader, writer)
+
             if not index:
                 await self.send_nack(writer)
                 return
             await self.send_ack(writer)
-            self._index_pipe_remote.send(index)
 
+            self._index_data_queue.put(index)
 
     ##################################################################
     # handle requests for file contents from the server
@@ -512,8 +518,8 @@ class Client(object):
             await self.send_nack(writer)
             return
         await self.send_ack(writer)
-        res["file_request"]["contents"] = base64.b64decode(
-            res["file_request"]["contents"].encode())
+        res["file_request"]["value"] = base64.b64decode(
+            res["file_request"]["value"].encode())
         self._file_contents_name_hash_client_queue.put(res)
 
 

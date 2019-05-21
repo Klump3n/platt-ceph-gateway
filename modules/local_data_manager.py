@@ -4,6 +4,7 @@ Manages the local copy of the data on the ceph cluster.
 
 """
 import queue
+import asyncio
 import multiprocessing
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
@@ -24,8 +25,9 @@ class LocalDataManager(object):
                 queue_datacopy_ceph_answer_hash_for_new_file,
                 queue_datacopy_backend_new_file_and_hash,
                 event_datacopy_backend_get_index,
-                event_datacopy_backend_index_ready,
-                pipe_this_end_datacopy_backend_index,
+                queue_datacopy_backend_index_data,
+                # event_datacopy_backend_index_ready,
+                # pipe_this_end_datacopy_backend_index,
                 event_datacopy_ceph_update_index,
                 queue_datacopy_ceph_filename_and_hash
     ):
@@ -38,8 +40,9 @@ class LocalDataManager(object):
                          queue_datacopy_ceph_answer_hash_for_new_file,
                          queue_datacopy_backend_new_file_and_hash,
                          event_datacopy_backend_get_index,
-                         event_datacopy_backend_index_ready,
-                         pipe_this_end_datacopy_backend_index,
+                         queue_datacopy_backend_index_data,
+                         # event_datacopy_backend_index_ready,
+                         # pipe_this_end_datacopy_backend_index,
                          event_datacopy_ceph_update_index,
                          queue_datacopy_ceph_filename_and_hash
             )
@@ -51,8 +54,9 @@ class LocalDataManager(object):
                  queue_datacopy_ceph_answer_hash_for_new_file,
                  queue_datacopy_backend_new_file_and_hash,
                  event_datacopy_backend_get_index,
-                 event_datacopy_backend_index_ready,
-                 pipe_this_end_datacopy_backend_index,
+                 queue_datacopy_backend_index_data,
+                 # event_datacopy_backend_index_ready,
+                 # pipe_this_end_datacopy_backend_index,
                  event_datacopy_ceph_update_index,
                  queue_datacopy_ceph_filename_and_hash
     ):
@@ -69,26 +73,58 @@ class LocalDataManager(object):
 
         # serve index requests from the backend
         cls._event_datacopy_backend_get_index = event_datacopy_backend_get_index
-        cls._event_datacopy_backend_index_ready = event_datacopy_backend_index_ready
-        cls._pipe_this_end_datacopy_backend_index = pipe_this_end_datacopy_backend_index
+        cls._queue_datacopy_backend_index_data = queue_datacopy_backend_index_data
+        # cls._event_datacopy_backend_index_ready = event_datacopy_backend_index_ready
+        # cls._pipe_this_end_datacopy_backend_index = pipe_this_end_datacopy_backend_index
 
         # request the index from the ceph cluster
         cls._event_datacopy_ceph_update_index = event_datacopy_ceph_update_index
         cls._queue_datacopy_ceph_filename_and_hash = queue_datacopy_ceph_filename_and_hash
 
 
+        try:
+            #
+            # asyncio: watch the queue and the shutdown event
+            cls._loop = asyncio.get_event_loop()
 
-        # cls._localdata_file_queue = localdata_file_queue
+            # task for reading the queues
+            cls._queue_reader_task = cls._loop.create_task(
+                cls._queue_reader_coro(cls))
 
-        # # pipe is a 2-tuple; first is for receiving, second is for sending
-        # cls._localdata_file_check_pipe_local = localdata_file_check_pipe_local
-        # cls._localdata_file_check_event = localdata_file_check_event
+            # task for periodically updating the index
+            cls._index_updater_task = cls._loop.create_task(
+                cls._index_updater_coro(cls))
 
-        # cls._localdata_get_index_event = localdata_get_index_event
-        # cls._localdata_index_avail_event = localdata_index_avail_event
-        # cls._localdata_index_pipe_local = localdata_index_pipe_local
+            cls._periodic_index_update_task = cls._loop.create_task(
+                cls._periodic_index_update_coro(cls))
 
+            tasks = [
+                cls._queue_reader_task,
+                cls._index_updater_task,
+                cls._periodic_index_update_task
+            ]
+            cls._loop.run_until_complete(asyncio.wait(tasks))
+
+            # stop the event loop
+            cls._loop.call_soon_threadsafe(cls._loop.stop())
+
+            cls.__del__()
+            cl.debug("Shutdown of ceph_connection process complete")
+
+        except KeyboardInterrupt:
+            # Ctrl C passes quietly
+            pass
+
+    async def _queue_reader_coro(cls):
+        """
+        Read the queue for new things to do.
+
+        """
         while True:
+
+            # if cls._shutdown_local_data_manager.is_set():
+            #     return
+
             try:
                 # try to read the queue for new files
                 try:
@@ -110,19 +146,63 @@ class LocalDataManager(object):
                 # try to read the queue for the attempt to get the hash from ceph
                 try:
                     new_file_dict = cls._queue_datacopy_ceph_answer_hash_for_new_file.get(block=False)
+
+                    # forward to backend
+                    cls._queue_datacopy_backend_new_file_and_hash.put(new_file_dict)
+
+                    # add file to index
                     namespace = new_file_dict["namespace"]
                     key = new_file_dict["key"]
                     sha1sum = new_file_dict["sha1sum"]
                     # sha1sum might still be not set but what can we do now
                     cls.add_file(namespace, key, sha1sum)
+
                 except queue.Empty:
                     pass
 
                 # try serving the index
                 if cls._event_datacopy_backend_get_index.is_set():
                     cls._event_datacopy_backend_get_index.clear()
-                    cls._pipe_this_end_datacopy_backend_index.send(cls.get_index())
-                    cls._event_datacopy_backend_index_ready.set()
+                    index = cls.get_index()
+                    cls._queue_datacopy_backend_index_data.put(index)
+                    # cls._pipe_this_end_datacopy_backend_index.send(index)
+                    # print("3")
+                    # cls._event_datacopy_backend_index_ready.set()
+                    # print("4")
+                await asyncio.sleep(1e-4)
+
+            except KeyboardInterrupt:
+                return
+
+    async def _periodic_index_update_coro(cls):
+        """
+        Update the index periodically.
+
+        """
+        await asyncio.sleep(5)  # wait for other processes to get their stuff together
+        while True:
+            cls._event_datacopy_ceph_update_index.set()
+            await asyncio.sleep(600)  #  wait 10 minutes
+
+    async def _index_updater_coro(cls):
+        """
+        Read the queue for new things to do.
+
+        """
+        new_task = await cls._loop.run_in_executor(
+            None, cls._index_updater_executor, cls)
+
+    def _index_updater_executor(cls):
+        """
+        Read the queue in a separate executor.
+
+        """
+        while True:
+
+            # if cls._shutdown_local_data_manager.is_set():
+            #     return
+
+            try:
 
                 # add whatever ceph is throwing at us to the local data copy
                 try:
@@ -132,32 +212,12 @@ class LocalDataManager(object):
                     sha1sum = new_file_dict["sha1sum"]
                     cls.add_file(namespace, key, sha1sum)
                 except queue.Empty:
+
+                    # reset the old index
                     pass
 
-                # # try to read the file check connection
-                # if cls._localdata_file_check_pipe_local.poll():
-                #     file_check_dict = cls._localdata_file_check_pipe_local.recv()
-                #     try:
-                #         namespace = file_check_dict["namespace"]
-                #         key = file_check_dict["key"]
-                #         cls._localdata_file_check_pipe_local.send(cls.name_is_present(namespace, key))
-                #         cls._localdata_file_check_event.set()
-                #     except KeyError:
-                #         pass
-
-                # # try to read the get index connection
-                # if cls._localdata_get_index_event.is_set():
-                #     cls._localdata_get_index_event.clear()
-                #     if cls._localdata_index_pipe_local.poll():
-                #         return_index = cls._localdata_index_pipe_local.recv()
-                #         cls._localdata_index_pipe_local.send(cls.get_index(return_index))
-                #         cls._localdata_index_avail_event.set()
-                #     else:
-                #         pass
-
-
             except KeyboardInterrupt:
-                break
+                pass
 
     @classmethod
     def _reset(cls):

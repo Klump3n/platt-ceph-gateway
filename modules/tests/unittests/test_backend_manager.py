@@ -41,20 +41,42 @@ class Test_BackendManager(unittest.TestCase):
         # index request events
         self.get_index_server_event = multiprocessing.Event()
         self.get_index_client_event = multiprocessing.Event()
-        # index avail events
-        self.index_avail_server_event = multiprocessing.Event()
-        self.index_avail_client_event = multiprocessing.Event()
-        # index pipes
-        self.server_index_pipe = multiprocessing.Pipe()
-        self.client_index_pipe = multiprocessing.Pipe()
-        (
-            self.server_index_pipe_local,
-            self.server_index_pipe_remote
-        ) = self.server_index_pipe
-        (
-            self.client_index_pipe_local,
-            self.client_index_pipe_remote
-        ) = self.client_index_pipe
+
+        #
+        # a queue for returning the requested index
+        self.queue_datacopy_backend_index_data = multiprocessing.Queue()
+        #
+        # a queue for returning the requested index
+        self.queue_client_index_data = multiprocessing.Queue()
+
+        # #
+        # # an event for telling the backend that the index from the data copy is
+        # # ready for pickup
+        # self.event_datacopy_backend_index_ready = multiprocessing.Event()
+        # #
+        # # a pipe that connects the datacopy mgr and the backend class, for
+        # # transferring the requested index
+        # (
+        #     self.pipe_this_end_datacopy_backend_index,
+        #     self.pipe_that_end_datacopy_backend_index
+        # ) = multiprocessing.Pipe()
+
+
+
+        # # index avail events
+        # # self.index_avail_server_event = multiprocessing.Event()
+        # self.index_avail_client_event = multiprocessing.Event()
+        # # index pipes
+        # # self.server_index_pipe = multiprocessing.Pipe()
+        # self.client_index_pipe = multiprocessing.Pipe()
+        # # (
+        # #     self.server_index_pipe_local,
+        # #     self.server_index_pipe_remote
+        # # ) = self.server_index_pipe
+        # (
+        #     self.client_index_pipe_local,
+        #     self.client_index_pipe_remote
+        # ) = self.client_index_pipe
 
         # queues for getting files from the ceph cluster
         # request file at server
@@ -76,8 +98,9 @@ class Test_BackendManager(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_server_queue,
                 self.get_index_server_event,
-                self.index_avail_server_event,
-                self.server_index_pipe_remote,
+                self.queue_datacopy_backend_index_data,
+                # self.index_avail_server_event,
+                # self.server_index_pipe_remote,
                 self.file_name_request_server_queue,
                 self.file_contents_name_hash_server_queue,
                 self.shutdown_backend_manager_event,
@@ -91,8 +114,9 @@ class Test_BackendManager(unittest.TestCase):
                 "localhost", 9001,
                 self.new_file_client_queue,
                 self.get_index_client_event,
-                self.index_avail_client_event,
-                self.client_index_pipe_remote,
+                self.queue_client_index_data,
+                # self.index_avail_client_event,
+                # self.client_index_pipe_remote,
                 self.file_name_request_client_queue,
                 self.file_contents_name_hash_client_queue,
                 self.shutdown_client_event,
@@ -143,9 +167,9 @@ class Test_BackendManager(unittest.TestCase):
                 surface_skin_c3d6, surface_skin_c3d8,
                 elset_c3d6, elset_c3d8
         ]:
-            new_file_name = "{}\t{}".format(namespace, filename)
-            expected_list.append({'todo': 'new_file', 'new_file': new_file_name})
-            self.new_file_server_queue.put(new_file_name)
+            new_file = {"namespace": namespace, "key": filename}
+            expected_list.append({'todo': 'new_file', 'new_file': new_file})
+            self.new_file_server_queue.put(new_file)
             time.sleep(.06)     # some time between new files
         time.sleep(.005)          # wait for queue
 
@@ -173,9 +197,9 @@ class Test_BackendManager(unittest.TestCase):
                 surface_skin_c3d6, surface_skin_c3d8,
                 elset_c3d6, elset_c3d8
         ]:
-            new_file_name = "{}\t{}".format(namespace, filename)
-            expected_list.append({'todo': 'new_file', 'new_file': new_file_name})
-            self.new_file_server_queue.put(new_file_name)
+            new_file = {"namespace": namespace, "key": filename}
+            expected_list.append({'todo': 'new_file', 'new_file': new_file})
+            self.new_file_server_queue.put(new_file)
         time.sleep(.005)          # wait for queue
 
         for filename in [
@@ -207,23 +231,17 @@ class Test_BackendManager(unittest.TestCase):
 
         # wait for the server to have received a request for the index
         if self.get_index_server_event.wait(1):
-            # give the server a mock index to send out
-            self.server_index_pipe_local.send(mock_index)
-            # tell the server to send the index
-            self.index_avail_server_event.set()
 
-        # wait until the index is ready on the client side
-        if self.index_avail_client_event.wait(1):
-            # clear the event
-            self.index_avail_client_event.clear()
-            # get the index from the pipe
-            index = self.client_index_pipe_local.recv()
+            # give the server a mock index to send out
+            self.queue_datacopy_backend_index_data.put(mock_index)
+
+        index = self.queue_client_index_data.get(True, 10)
 
         # assert
         self.assertEqual(index, expected_index)
 
     def test_request_file_data(self):
-        """Request the index from the server.
+        """Request file data from backend
 
         """
         namespace = "some_namespace"
@@ -251,9 +269,13 @@ class Test_BackendManager(unittest.TestCase):
                 surface_skin_c3d6, surface_skin_c3d8,
                 elset_c3d6, elset_c3d8
         ]:
-            file_name = "{}\t{}".format(namespace, filename)
-            expected_list.append(file_name)
-            self.file_name_request_client_queue.put(file_name)
+            # file_name = "{}\t{}".format(namespace, filename)
+            fdict = {
+                "namespace": namespace,
+                "key": filename
+            }
+            expected_list.append(fdict)
+            self.file_name_request_client_queue.put(fdict)
             time.sleep(.06)     # some time between new files
         time.sleep(.005)          # wait for queue
 
@@ -283,16 +305,22 @@ class Test_BackendManager(unittest.TestCase):
                 elset_c3d6, elset_c3d8
         ]:
             file_contents = os.urandom(file_size)
-            file_name = "{}\t{}".format(namespace, filename)
-            expected_list.append(file_name)
+            fdict = {
+                "namespace": namespace,
+                "key": filename
+            }
+            expected_list.append(fdict)
+            self.file_name_request_client_queue.put(fdict)
+
             file_hash = hashlib.sha1(file_contents).hexdigest()
-            transfer_this[file_name] = {
-                "name": file_name,
-                "hash": file_hash,
-                "contents": file_contents
+            transfer_this[filename] = {
+                "namespace": namespace,
+                "key": filename,
+                "sha1sum": file_hash,
+                "value": file_contents
             }
             # drop files in the queue
-            self.file_name_request_client_queue.put(file_name)
+            self.file_name_request_client_queue.put(fdict)
             time.sleep(.06)     # some time between new files
         time.sleep(.005)          # wait for queue
 
@@ -306,7 +334,7 @@ class Test_BackendManager(unittest.TestCase):
         ]:
             res = self.file_name_request_server_queue.get(True, .1)
             self.assertIn(res, expected_list)
-            transfer_me = transfer_this[res]
+            transfer_me = transfer_this[res["key"]]
             self.file_contents_name_hash_server_queue.put(transfer_me)
         time.sleep(.05)          # wait for queue
 
@@ -320,7 +348,6 @@ class Test_BackendManager(unittest.TestCase):
         ]:
             res = self.file_contents_name_hash_client_queue.get(True, .1)
             self.assertIn(res["file_request"], list(transfer_this.values()))
-
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

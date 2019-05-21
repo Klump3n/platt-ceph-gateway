@@ -71,16 +71,19 @@ def start_tasks(args):
     # an event for requesting the index for the backend from the data copy
     event_datacopy_backend_get_index = multiprocessing.Event()
     #
-    # an event for telling the backend that the index from the data copy is
-    # ready for pickup
-    event_datacopy_backend_index_ready = multiprocessing.Event()
-    #
-    # a pipe that connects the datacopy mgr and the backend class, for
-    # transferring the requested index
-    (
-        pipe_this_end_datacopy_backend_index,
-        pipe_that_end_datacopy_backend_index
-    ) = multiprocessing.Pipe()
+    # a queue for returning the requested index
+    queue_datacopy_backend_index_data = multiprocessing.Queue()
+    # #
+    # # an event for telling the backend that the index from the data copy is
+    # # ready for pickup
+    # event_datacopy_backend_index_ready = multiprocessing.Event()
+    # #
+    # # a pipe that connects the datacopy mgr and the backend class, for
+    # # transferring the requested index
+    # (
+    #     pipe_this_end_datacopy_backend_index,
+    #     pipe_that_end_datacopy_backend_index
+    # ) = multiprocessing.Pipe()
 
 
     # inter process communication for requesting the index for the data manager
@@ -97,9 +100,9 @@ def start_tasks(args):
     #
     # an event for shutting down the backend manager
     event_backend_manager_shutdown = multiprocessing.Event()
-    # #
-    # # an event for shutting down the
-    # event__shutdown = multiprocessing.Event()
+    #
+    # an event for shutting down the ceph manager
+    event_ceph_shutdown = multiprocessing.Event()
 
 
     localdata_manager = multiprocessing.Process(
@@ -110,8 +113,9 @@ def start_tasks(args):
             queue_datacopy_ceph_answer_hash_for_new_file,
             queue_datacopy_backend_new_file_and_hash,
             event_datacopy_backend_get_index,
-            event_datacopy_backend_index_ready,
-            pipe_this_end_datacopy_backend_index,
+            queue_datacopy_backend_index_data,
+            # event_datacopy_backend_index_ready,
+            # pipe_this_end_datacopy_backend_index,
             event_datacopy_ceph_update_index,
             queue_datacopy_ceph_filename_and_hash
         )
@@ -131,8 +135,9 @@ def start_tasks(args):
             backend_port,
             queue_datacopy_backend_new_file_and_hash,
             event_datacopy_backend_get_index,
-            event_datacopy_backend_index_ready,
-            pipe_that_end_datacopy_backend_index,
+            queue_datacopy_backend_index_data,
+            # event_datacopy_backend_index_ready,
+            # pipe_that_end_datacopy_backend_index,
             queue_backend_ceph_request_file,
             queue_backend_ceph_answer_file_name_contents_hash,
             event_backend_manager_shutdown
@@ -141,7 +146,10 @@ def start_tasks(args):
     ceph_manager = multiprocessing.Process(
         target=CephManager,
         args=(
-            ceph_conf, ceph_pool, ceph_user,
+            ceph_conf,
+            ceph_pool,
+            ceph_user,
+            event_ceph_shutdown,
             queue_datacopy_ceph_request_hash_for_new_file,
             queue_datacopy_ceph_answer_hash_for_new_file,
             queue_backend_ceph_request_file,
@@ -151,44 +159,27 @@ def start_tasks(args):
         )
     )
 
-    # proxy_manager = multiprocessing.Process(
-    #     target=ProxyManager,
-    #     args=(
-    #         ceph_conf, ceph_pool, ceph_user,
-    #         queue_proxy_sim_new_file,         # receiving a new entry
-    #         queue_proxy_datacopy_new_file,    # fwd to datacopy
-    #         queue_proxy_backend_new_file,     # fwd to backend
-    #         queue_proxy_backend_file_request,  # requesting file from ceph
-    #         queue_proxy_backend_file_send,     # sending requested file
-    #         # localdata_check_file_pipe,
-    #         # localdata_get_index_pipe,
-    #         # backend_add_file_queue,
-    #         # backend_file_request_queue,
-    #         # proxy_file_request_queue,
-    #     )
-    # )
-
     try:
         localdata_manager.start()
-        proxy_manager.start()
         backend_manager.start()
         simulation_manager.start()
+        ceph_manager.start()
 
         localdata_manager.join()
-        proxy_manager.join()
         backend_manager.join()
         simulation_manager.join()
-
+        ceph_manager.join()
 
     except KeyboardInterrupt:
         print()
         cl.info('Detected KeyboardInterrupt -- Shutting down')
+
         event_backend_manager_shutdown.set()
+        event_ceph_shutdown.set()
         time.sleep(.1)          # Give the process some time to flush it all out
 
     finally:
         localdata_manager.terminate()
-        proxy_manager.terminate()
         backend_manager.terminate()
         simulation_manager.terminate()
-
+        ceph_manager.terminate()

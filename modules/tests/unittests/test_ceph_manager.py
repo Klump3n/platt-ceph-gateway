@@ -34,6 +34,7 @@ class Test_CephManager(unittest.TestCase):
         self.ceph_pool = "simdata"
         self.pool_user = "simuser"
 
+        self.event_ceph_shutdown = multiprocessing.Event()
 
         self.queue_request_hash_new_file = multiprocessing.Queue()
         self.queue_answer_hash_new_file = multiprocessing.Queue()
@@ -50,6 +51,7 @@ class Test_CephManager(unittest.TestCase):
                 self.ceph_config,
                 self.ceph_pool,
                 self.pool_user,
+                self.event_ceph_shutdown,
                 self.queue_request_hash_new_file,
                 self.queue_answer_hash_new_file,
                 self.queue_request_file,
@@ -69,6 +71,8 @@ class Test_CephManager(unittest.TestCase):
         #     print(res)
 
         time.sleep(30)
+        self.event_ceph_shutdown.set()
+        time.sleep(.1)
         ceph.terminate()
         time.sleep(.1)
 
@@ -80,6 +84,7 @@ class Test_CephManager(unittest.TestCase):
         self.ceph_pool = "simdata"
         self.pool_user = "simuser"
 
+        self.event_ceph_shutdown = multiprocessing.Event()
 
         self.queue_request_hash_new_file = multiprocessing.Queue()
         self.queue_answer_hash_new_file = multiprocessing.Queue()
@@ -96,6 +101,7 @@ class Test_CephManager(unittest.TestCase):
                 self.ceph_config,
                 self.ceph_pool,
                 self.pool_user,
+                self.event_ceph_shutdown,
                 self.queue_request_hash_new_file,
                 self.queue_answer_hash_new_file,
                 self.queue_request_file,
@@ -120,6 +126,8 @@ class Test_CephManager(unittest.TestCase):
         data = self.queue_answer_hash_new_file.get(True, 2)  # block for 2 seconds
 
         time.sleep(1)
+        self.event_ceph_shutdown.set()
+        time.sleep(.1)
         ceph.terminate()
         time.sleep(.1)
 
@@ -131,6 +139,7 @@ class Test_CephManager(unittest.TestCase):
         self.ceph_pool = "simdata"
         self.pool_user = "simuser"
 
+        self.event_ceph_shutdown = multiprocessing.Event()
 
         self.queue_request_hash_new_file = multiprocessing.Queue()
         self.queue_answer_hash_new_file = multiprocessing.Queue()
@@ -147,6 +156,7 @@ class Test_CephManager(unittest.TestCase):
                 self.ceph_config,
                 self.ceph_pool,
                 self.pool_user,
+                self.event_ceph_shutdown,
                 self.queue_request_hash_new_file,
                 self.queue_answer_hash_new_file,
                 self.queue_request_file,
@@ -171,6 +181,8 @@ class Test_CephManager(unittest.TestCase):
         data = self.queue_answer_file.get(True, 2)  # block for 2 seconds
 
         time.sleep(1)
+        self.event_ceph_shutdown.set()
+        time.sleep(.1)
         ceph.terminate()
         time.sleep(.1)
 

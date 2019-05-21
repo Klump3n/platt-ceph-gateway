@@ -9,6 +9,8 @@ import argparse
 import pathlib
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+from util.greet import greeting_artwork
+
 import modules.start_tasks as start_tasks
 
 def parse_commandline():
@@ -125,6 +127,28 @@ def setup_logging(logging_level):
 #     ceph_user = args.user
 #     build_local_index(ceph_conf, ceph_pool, ceph_user)
 
+def greet():
+    """
+    Print a greeting to stdout.
+
+    """
+    greeting = """
+                   a/
+          .   ?"'  aa/
+     "r   _wQQQQQQQQQ@      +----------------------------------+
+  "?"     QQQQQQQQQQQQ      |                                  |
+        ]ajQQQQQQQQQQga/    |  This is the platt proxy server  |
+        jQQQQQQQQQQQQQQP    |                                  |
+        QQQQQQQQQQQQQQ/     |   Connect the platt backend to   |
+            wQQWQQQQQQ'     |     receive simulation data.     |
+           _QQQWQQQQ?       |                                  |
+           jQQmQQQP'        +----------------------------------+
+           ???4WWQ'
+                )?
+    """
+    print(greeting)
+    # print(greeting_artwork)
+
 def perform_unittests():
     """
     Start unittest for the program.
@@ -140,5 +164,6 @@ if __name__ == "__main__":
     args = parse_commandline()
     if args.test:
         perform_unittests()
+    greet()
     setup_logging(args.log)
     start_tasks.start_tasks(args)
