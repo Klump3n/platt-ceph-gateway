@@ -163,42 +163,51 @@ class BackendManager(object):
 
                 self._index_connection_active = False
 
-            # requests and answers are handled separately because this can be
-            # done asynchronously
-            #
+
             # manage requests for file data from the ceph cluster
-            if task == "file_requests":
-                self._file_requests_connection_active = True
-                self.file_request_receiver_task = self._loop.create_task(
-                    self._file_request_receiver_coro(reader, writer))
+            if task == "file_download":
 
-                await self.file_request_receiver_task
+                self.file_download_task = self._loop.create_task(
+                    self._file_download_coro(reader, writer))
+                # optional?
+                await self.file_download_task
 
-                # watch the connection
-                conn_active = await self.connection_active_task
-                if not conn_active:
-                    bl.info("Connection to {}/{} lost".format(p_host, p_port))
-                    bl.debug("Cancelling file_request_receiver_task")
-                    self.file_request_receiver_task.cancel()
+            # # requests and answers are handled separately because this can be
+            # # done asynchronously
+            # #
+            # # manage requests for file data from the ceph cluster
+            # if task == "file_requests":
+            #     self._file_requests_connection_active = True
+            #     self.file_request_receiver_task = self._loop.create_task(
+            #         self._file_request_receiver_coro(reader, writer))
 
-                self._file_requests_connection_active = False
+            #     await self.file_request_receiver_task
 
-            # answer the requests for files from the ceph cluster
-            if task == "file_answers":
-                self._file_answers_connection_active = True
-                self.file_request_answer_task = self._loop.create_task(
-                    self._file_request_answer_coro(reader, writer))
+            #     # watch the connection
+            #     conn_active = await self.connection_active_task
+            #     if not conn_active:
+            #         bl.info("Connection to {}/{} lost".format(p_host, p_port))
+            #         bl.debug("Cancelling file_request_receiver_task")
+            #         self.file_request_receiver_task.cancel()
 
-                await self.file_request_answer_task
+            #     self._file_requests_connection_active = False
 
-                # watch the connection
-                conn_active = await self.connection_active_task
-                if not conn_active:
-                    bl.info("Connection to {}/{} lost".format(p_host, p_port))
-                    bl.debug("Cancelling file_request_answer_task")
-                    self.file_request_answer_task.cancel()
+            # # answer the requests for files from the ceph cluster
+            # if task == "file_answers":
+            #     self._file_answers_connection_active = True
+            #     self.file_request_answer_task = self._loop.create_task(
+            #         self._file_request_answer_coro(reader, writer))
 
-                self._file_answers_connection_active = False
+            #     await self.file_request_answer_task
+
+            #     # watch the connection
+            #     conn_active = await self.connection_active_task
+            #     if not conn_active:
+            #         bl.info("Connection to {}/{} lost".format(p_host, p_port))
+            #         bl.debug("Cancelling file_request_answer_task")
+            #         self.file_request_answer_task.cancel()
+
+            #     self._file_answers_connection_active = False
 
         except Exception as e:
             bl.error("Exception: {}".format(e))
@@ -280,17 +289,17 @@ class BackendManager(object):
                 except queue.Empty:
                     pass
 
-            if not self._file_requests_connection_active:
-                try:
-                    self._file_name_request_server_queue.get(False)
-                except queue.Empty:
-                    pass
+            # if not self._file_requests_connection_active:
+            #     try:
+            #         self._file_name_request_server_queue.get(False)
+            #     except queue.Empty:
+            #         pass
 
-            if not self._file_answers_connection_active:
-                try:
-                    self._file_content_name_hash_server_queue.get(False)
-                except queue.Empty:
-                    pass
+            # if not self._file_answers_connection_active:
+            #     try:
+            #         self._file_content_name_hash_server_queue.get(False)
+            #     except queue.Empty:
+            #         pass
 
 
     ##################################################################
@@ -423,25 +432,30 @@ class BackendManager(object):
     ##################################################################
     # handle requests for file contents from the client
     #
-    async def _file_request_receiver_coro(self, reader, writer):
+    async def _file_download_coro(self, reader, writer):
         """
-        Monitor the open connection for requests for file contents from the ceph
-        cluster.
-
-        Drop any new request that comes in into the queue.
+        Respond to download requests.
 
         """
         # while the connection is open ...
-        while not reader.at_eof():
+        if not reader.at_eof():
+
+
+            # self._file_name_request_server_queue = file_name_request_server_queue
+            # self._file_content_name_hash_server_queue = file_content_name_hash_server_queue
+
+            self._cancel_file_download_executor_event = threading.Event()
+            download_connection_watchdog = self._loop.create_task(
+                self._check_download_connection(reader, writer))
 
             # wait for incoming traffic from the client
             res = await self.read_data(reader, writer)
+
             if not res:
                 await self.send_nack(writer)
                 return
-            bl.debug("Request for {} received".format(res))
-            await self.send_ack(writer)
 
+            res = res["requested_file"]
             namespace = res["namespace"]
             key = res["key"]
             request_json = {
@@ -449,59 +463,44 @@ class BackendManager(object):
                 "key": key
             }
 
+            bl.debug("Request for {}/{} received".format(namespace, key))
+
+            await self.send_ack(writer)
+
             # drop the request in the queue for the proxy manager
             self._file_name_request_server_queue.put(request_json)
 
-
-
-    ##################################################################
-    # handle the answers to requests for file contents from the client
-    #
-    async def _file_request_answer_coro(self, reader, writer):
-        """
-        Send requested files to the client.
-
-        Watch the data content queue in a separate executor. If that returns
-        something forward that to the answering method.
-
-        """
-        self._cancel_file_request_answer_executor_event = threading.Event()
-
-        file_request_answer_connection_watchdog = self._loop.create_task(
-            self._check_file_request_answer_connection(reader, writer))
-
-        # while the connection is open ...
-        while not reader.at_eof():
-
             send_this = await self._loop.run_in_executor(
-                None, self._watch_file_request_answer_queue)
+                None, self._watch_file_send_queue)
 
             if not send_this:
                 return None
 
-            bl.debug("Got file contents from queue")
+            logging.debug("Got file contents from queue")
 
-            await self._answer_file_request(reader, writer, send_this)
+            await self._send_file_to_client(reader, writer, send_this)
 
-    async def _check_file_request_answer_connection(self, reader, writer):
+
+    async def _check_download_connection(self, reader, writer):
         """
         Check the connection and set an event if it drops.
 
         """
         while True:
             if reader.at_eof():
-                self._cancel_file_request_answer_executor_event.set()
+                self._cancel_file_download_executor_event.set()
                 return
             await asyncio.sleep(.1)
 
-    def _watch_file_request_answer_queue(self):
+
+    def _watch_file_send_queue(self):
         """
         Watch the queue for sending out the answer for file requests.
 
         """
         while True:
-            if self._cancel_file_request_answer_executor_event.is_set():
-                self._cancel_file_request_answer_executor_event.clear()
+            if self._cancel_file_download_executor_event.is_set():
+                self._cancel_file_download_executor_event.clear()
                 return None
             try:
                 push_file = self._file_content_name_hash_server_queue.get(True, .1)
@@ -510,7 +509,7 @@ class BackendManager(object):
             else:
                 return push_file
 
-    async def _answer_file_request(self, reader, writer, file_dictionary):
+    async def _send_file_to_client(self, reader, writer, file_dictionary):
         """
         Answer file requests.
 
@@ -518,19 +517,140 @@ class BackendManager(object):
         has to be reversed on the other side.
 
         """
-        bl.debug("Sending file request answer via socket")
+        logging.debug("Sending file request answer via socket")
 
-        # encode the binary data as base64 string and
-        file_dictionary["value"] = base64.b64encode(
+        # print(file_dictionary.keys())
+        # # encode the binary data as base64 string and
+        # file_dictionary["contents"] = base64.b64encode(
+        #     file_dictionary["value"]).decode()
+
+        out_dict = dict()
+        out_dict["namespace"] = file_dictionary["namespace"]
+        out_dict["object"] = file_dictionary["object"]
+        out_dict["contents"] = base64.b64encode(
             file_dictionary["value"]).decode()
+        out_dict["tags"] = file_dictionary["tags"]
 
         todo_val = "file_request"
         request_answer_dictionary = {
             "todo": todo_val,
-            todo_val: file_dictionary
+            todo_val: out_dict
         }
 
         await self._send_dictionary(reader, writer, request_answer_dictionary)
+
+
+    # ##################################################################
+    # # handle requests for file contents from the client
+    # #
+    # async def _file_request_receiver_coro(self, reader, writer):
+    #     """
+    #     Monitor the open connection for requests for file contents from the ceph
+    #     cluster.
+
+    #     Drop any new request that comes in into the queue.
+
+    #     """
+    #     # while the connection is open ...
+    #     while not reader.at_eof():
+
+    #         # wait for incoming traffic from the client
+    #         res = await self.read_data(reader, writer)
+    #         if not res:
+    #             await self.send_nack(writer)
+    #             return
+    #         bl.debug("Request for {} received".format(res))
+    #         await self.send_ack(writer)
+
+    #         namespace = res["namespace"]
+    #         key = res["key"]
+    #         request_json = {
+    #             "namespace": namespace,
+    #             "key": key
+    #         }
+
+    #         # drop the request in the queue for the proxy manager
+    #         self._file_name_request_server_queue.put(request_json)
+
+
+
+    # ##################################################################
+    # # handle the answers to requests for file contents from the client
+    # #
+    # async def _file_request_answer_coro(self, reader, writer):
+    #     """
+    #     Send requested files to the client.
+
+    #     Watch the data content queue in a separate executor. If that returns
+    #     something forward that to the answering method.
+
+    #     """
+    #     self._cancel_file_request_answer_executor_event = threading.Event()
+
+    #     file_request_answer_connection_watchdog = self._loop.create_task(
+    #         self._check_file_request_answer_connection(reader, writer))
+
+    #     # while the connection is open ...
+    #     while not reader.at_eof():
+
+    #         send_this = await self._loop.run_in_executor(
+    #             None, self._watch_file_request_answer_queue)
+
+    #         if not send_this:
+    #             return None
+
+    #         bl.debug("Got file contents from queue")
+
+    #         await self._answer_file_request(reader, writer, send_this)
+
+    # async def _check_file_request_answer_connection(self, reader, writer):
+    #     """
+    #     Check the connection and set an event if it drops.
+
+    #     """
+    #     while True:
+    #         if reader.at_eof():
+    #             self._cancel_file_request_answer_executor_event.set()
+    #             return
+    #         await asyncio.sleep(.1)
+
+    # def _watch_file_request_answer_queue(self):
+    #     """
+    #     Watch the queue for sending out the answer for file requests.
+
+    #     """
+    #     while True:
+    #         if self._cancel_file_request_answer_executor_event.is_set():
+    #             self._cancel_file_request_answer_executor_event.clear()
+    #             return None
+    #         try:
+    #             push_file = self._file_content_name_hash_server_queue.get(True, .1)
+    #         except queue.Empty:
+    #             pass
+    #         else:
+    #             return push_file
+
+    # async def _answer_file_request(self, reader, writer, file_dictionary):
+    #     """
+    #     Answer file requests.
+
+    #     Encode the binary data in the file_dictionary as a base64 string. This
+    #     has to be reversed on the other side.
+
+    #     """
+    #     bl.debug("Sending file request answer via socket")
+
+    #     # encode the binary data as base64 string and
+    #     file_dictionary["value"] = base64.b64encode(
+    #         file_dictionary["value"]).decode()
+
+    #     todo_val = "file_request"
+    #     request_answer_dictionary = {
+    #         "todo": todo_val,
+    #         todo_val: file_dictionary
+    #     }
+
+    #     await self._send_dictionary(reader, writer, request_answer_dictionary)
 
 
     ##################################################################

@@ -203,8 +203,6 @@ class Test_Integrate_GET_INDEX_Backend_DataCopy(unittest.TestCase):
                 self.new_file_client_queue,
                 self.get_index_client_event,
                 self.client_index_data_queue,
-                # self.index_avail_client_event,
-                # self.client_index_pipe_remote,
                 self.file_name_request_client_queue,
                 self.file_contents_name_hash_client_queue,
                 self.shutdown_client_event,

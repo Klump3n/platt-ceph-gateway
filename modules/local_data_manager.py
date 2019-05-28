@@ -181,6 +181,7 @@ class LocalDataManager(object):
         """
         await asyncio.sleep(5)  # wait for other processes to get their stuff together
         while True:
+            cl.info("Updating index")
             cls._event_datacopy_ceph_update_index.set()
             await asyncio.sleep(600)  #  wait 10 minutes
 
