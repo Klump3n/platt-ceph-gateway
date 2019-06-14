@@ -698,14 +698,12 @@ class BackendManager(object):
             bl.debug("Parsing {} as json failed".format(res))
             await self.send_nack(writer)
             raise
-            return
         except Exception as e:
             # if ANYTHING else goes wrong send a nack and start from the
             # beginning
             await self.send_nack(writer)
             bl.error("An Exception occured: {}".format(e))
             raise
-            return
         else:
             # otherwise return the received data
             return res
