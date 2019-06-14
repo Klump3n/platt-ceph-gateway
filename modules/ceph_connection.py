@@ -290,6 +290,17 @@ class CephConnection(object):
         for xattr_key, xattr_val in obj_xattrs:
             tags_dict[xattr_key] = xattr_val.decode()
 
+        # if the sha1sum is not calculated we generate it
+        try:
+            sha1sum = tags_dict["sha1sum"]
+        except KeyError:
+            sha1sum = self._calc_and_write_objhash(objname)
+        else:
+            if sha1sum == "":
+                sha1sum = self._calc_and_write_objhash(objname)
+
+        tags_dict["sha1sum"] = sha1sum
+
         return tags_dict
 
     def _calc_and_write_objhash(self, objname):
@@ -297,6 +308,7 @@ class CephConnection(object):
         Calculate the objhash and write it to the obj tags on the cluster.
 
         """
+        cl.debug("Calculating hash for {}".format(objname))
         objval = self._get_objval(objname)
         objhash = hashlib.sha1(objval).hexdigest()
 
@@ -426,19 +438,9 @@ class CephConnection(object):
 
         tags_dict = self._get_objtags(obj_name)
 
-        try:
-            sha1sum = tags_dict["sha1sum"]
-        except KeyError:
-            sha1sum = self._calc_and_write_objhash(obj_name)
-        else:
-            if sha1sum == "":
-                sha1sum = self._calc_and_write_objhash(obj_name)
-
-        # self.__remove_objhash(obj_name)
-
         self._unset_namespace()
 
-        tags_dict["sha1sum"] = sha1sum
+        # tags_dict["sha1sum"] = sha1sum
 
         return_dict = dict()
         return_dict["namespace"] = namespace
