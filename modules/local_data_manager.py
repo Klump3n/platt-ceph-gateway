@@ -251,32 +251,96 @@ class LocalDataManager(object):
 
         if hashed_key not in cls._hashset:
 
+            simtype = None
+
+            to_parse = None
+
+            field_type = None
+
+            fieldname = None
+
+            skintype = None
+
+            elemtype = None
+
             try:
+
                 string = key.split("universe.fo.")[1]
-                field, timestep = string.split("@")
-                usage_rest = field.split(".")
-                usage = usage_rest[0]
-                if usage == "elements":
-                    elemtype = usage_rest[1]
-                    fieldname = None
-                elif usage == "nodes":
-                    elemtype = None
-                    fieldname = None
-                elif usage == "elemental":
-                    elemtype = usage_rest[1]
-                    fieldname = "_".join(str(r) for r in usage_rest[2:])
-                elif usage == "nodal":
-                    elemtype = None
-                    fieldname = "_".join(str(r) for r in usage_rest[1:])
-                elif usage == "elset":
-                    elemtype = usage_rest[1]
-                    fieldname = ".".join(str(r) for r in usage_rest[2:])
-                elif usage == "skin":
-                    elemtype = usage_rest[1]
-                    fieldname = None
+                objects, timestep = string.split("@")
+
+                objects_definition = objects.split(".")
+
+                simtype = objects_definition[0]
+
+                # parse mesh or field, only field has field_type
+                if objects_definition[1] in ["nodal", "elemental"]:
+                    to_parse = "field"
+                else:
+                    to_parse = "mesh"
+
+                if to_parse == "field":
+                    usage = objects_definition[1]
+                    fieldname = objects_definition[2]
+                    try:
+                        elemtype = objects_definition[3]
+                    except IndexError:
+                        pass
+
+                elif to_parse == "mesh":
+                    usage = objects_definition[1]
+
+                    if usage == "nodes":
+                        pass
+
+                    elif usage == "elements":
+                        elemtype = objects_definition[2]
+
+                    elif usage == "skin":
+                        skintype = objects_definition[2]
+                        elemtype = objects_definition[3]
+
+                    elif usage == "elementactivationbitmap":
+                        elemtype = objects_definition[2]
+
+                    elif usage == "elset":
+                        fieldname = objects_definition[2]
+                        elemtype = objects_definition[3]
+
+                    elif usage == "nset":
+                        fieldname = objects_definition[2]
+
+                    elif usage == "boundingbox":
+                        pass
+
                 else:
                     cl.debug("Can not add file {}/{}".format(namespace, key))
                     return
+
+                # usage_rest = field.split(".")
+                # usage = usage_rest[0]
+                # if usage == "elements":
+                #     elemtype = usage_rest[1]
+                #     fieldname = None
+                # elif usage == "nodes":
+                #     elemtype = None
+                #     fieldname = None
+                # elif usage == "nodes_ma":
+                #     elemtype = None
+                #     fieldname = None
+                # elif usage == "elemental":
+                #     elemtype = usage_rest[1]
+                #     fieldname = "_".join(str(r) for r in usage_rest[2:])
+                # elif usage == "nodal":
+                #     elemtype = None
+                #     fieldname = "_".join(str(r) for r in usage_rest[1:])
+                # elif usage == "elset":
+                #     elemtype = usage_rest[1]
+                #     fieldname = ".".join(str(r) for r in usage_rest[2:])
+                # elif usage == "skin":
+                #     elemtype = usage_rest[1]
+                #     fieldname = None
+
+
             except:
                 # YOU SHALL NOT PARSE
                 cl.debug("Can not add file {}/{}".format(namespace, key))
@@ -291,32 +355,40 @@ class LocalDataManager(object):
             if timestep not in cls._local_copy[namespace]:
                 cls._local_copy[namespace][timestep] = {}
 
-            if usage not in cls._local_copy[namespace][timestep]:
-                cls._local_copy[namespace][timestep][usage] = {}
+            if simtype not in cls._local_copy[namespace][timestep]:
+                cls._local_copy[namespace][timestep][simtype] = {}
 
-            if usage == "nodes":
-                i_entry = cls._local_copy[namespace][timestep][usage]
+            if usage not in cls._local_copy[namespace][timestep][simtype]:
+                cls._local_copy[namespace][timestep][simtype][usage] = {}
 
-            # if usage == "elements":
-            if (usage in ["skin", "elements"]):
-            # if (usage in ["elset", "elements"]):
+            # if usage == "nodes":
+            if usage in ["nodes", "boundingbox"]:
+                i_entry = cls._local_copy[namespace][timestep][simtype][usage]
 
-                if elemtype not in cls._local_copy[namespace][timestep][usage]:
-                    cls._local_copy[namespace][timestep][usage][elemtype] = {}
-                i_entry = cls._local_copy[namespace][timestep][usage][elemtype]
+            if usage == "elements":
+                if elemtype not in cls._local_copy[namespace][timestep][simtype][usage]:
+                    cls._local_copy[namespace][timestep][simtype][usage][elemtype] = {}
+                i_entry = cls._local_copy[namespace][timestep][simtype][usage][elemtype]
+
+            if usage == "skin":
+                if skintype not in cls._local_copy[namespace][timestep][simtype][usage]:
+                    cls._local_copy[namespace][timestep][simtype][usage][skintype] = {}
+                if elemtype not in cls._local_copy[namespace][timestep][simtype][usage][skintype]:
+                    cls._local_copy[namespace][timestep][simtype][usage][skintype][elemtype] = {}
+                i_entry = cls._local_copy[namespace][timestep][simtype][usage][skintype][elemtype]
 
             if usage in ["elemental", "elset"]:
             # if usage == "elemental":
-                if fieldname not in cls._local_copy[namespace][timestep][usage]:
-                    cls._local_copy[namespace][timestep][usage][fieldname] = {}
-                if elemtype not in cls._local_copy[namespace][timestep][usage][fieldname]:
-                    cls._local_copy[namespace][timestep][usage][fieldname][elemtype] = {}
-                i_entry = cls._local_copy[namespace][timestep][usage][fieldname][elemtype]
+                if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
+                    cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
+                if elemtype not in cls._local_copy[namespace][timestep][simtype][usage][fieldname]:
+                    cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype] = {}
+                i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype]
 
             if usage == "nodal":
-                if fieldname not in cls._local_copy[namespace][timestep][usage]:
-                    cls._local_copy[namespace][timestep][usage][fieldname] = {}
-                i_entry = cls._local_copy[namespace][timestep][usage][fieldname]
+                if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
+                    cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
+                i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname]
 
             i_entry['object_key'] = key
             # i_entry['object_key'] = namespace_key.split("\t")[1]

@@ -55,6 +55,16 @@ class BackendManager(object):
         self._file_requests_connection_active = False
         self._file_answers_connection_active = False
 
+        # download data from the ceph manager and store it in a dictionary
+        #
+        self._ceph_data_dict = dict()
+        # we need a threading lock and not a asyncio lock because we use them in
+        # an executor (extra tread)
+        self._ceph_data_lock = threading.Lock()
+        ceph_data_task = self._loop.create_task(self._ceph_data_coro())
+        perdiodically_delete_ceph_data_task = self._loop.create_task(
+            self._periodic_ceph_file_deletion_coro())
+
         # manage the queue cleanup when there are no active connections
         queue_cleanup_task = self._loop.create_task(self._queue_cleanup_coro())
         shutdown_watch_task = self._loop.create_task(
@@ -248,6 +258,90 @@ class BackendManager(object):
                 except queue.Empty:
                     pass
 
+    ##################################################################
+    # handle the cleanup of queues when connections are not active
+    #
+    async def _ceph_data_coro(self):
+        """
+        Watches the data returned by the ceph manager.
+
+        Returned data is placed into a dictionary.
+
+        """
+        await self._loop.run_in_executor(
+            None, self._ceph_data_executor)
+
+    def _ceph_data_executor(self):
+        """
+        Run this in a separate executor.
+
+        """
+        while True:
+
+            if self._shutdown_backend_manager_event.is_set():
+                return
+
+            try:
+                ans = self._file_content_name_hash_server_queue.get(True, .1)
+
+            except queue.Empty:
+                pass
+
+            else:
+                request_dict = ans
+                obj_key = request_dict["object"]
+                obj_namespace = request_dict["namespace"]
+
+                object_descriptor = "{}/{}".format(obj_namespace, obj_key)
+                bl.debug("Reading {} and making available".format(
+                    object_descriptor))
+
+                occurence_key = object_descriptor
+                occurence_dict = {
+                    "timestamp": time.time(),
+                    "request_dict": request_dict
+                }
+
+                with self._ceph_data_lock:
+                    self._ceph_data_dict[occurence_key] = occurence_dict
+
+    async def _periodic_ceph_file_deletion_coro(self):
+        """
+        Periodically delete old data in the ceph data dictionary.
+
+        The starter.
+
+        """
+        file_deletion = await self._loop.run_in_executor(
+            None, self._periodic_ceph_file_deletion_executor)
+
+    def _periodic_ceph_file_deletion_executor(self):
+        """
+        Periodically delete old data in the ceph data dictionary.
+
+        The executor.
+
+        """
+        while True:
+
+            # wait for 1 second, this is essentially a 1 second interval timer
+            if self._shutdown_backend_manager_event.wait(1):
+                return
+
+            current_time = time.time()
+
+            with self._ceph_data_lock:
+                for object_descriptor in list(self._ceph_data_dict.keys()):
+
+                    timestamp = self._ceph_data_dict[object_descriptor]["timestamp"]
+                    elapsed_time = current_time - timestamp
+
+                    if (elapsed_time > 60):
+
+                        bl.debug("Removing {} after 60 seconds".format(
+                            object_descriptor))
+                        del self._ceph_data_dict[object_descriptor]
+
 
     ##################################################################
     # handle the pushing of information about new files to the client
@@ -410,14 +504,44 @@ class BackendManager(object):
 
             await self.send_ack(writer)
 
-            # drop the request in the queue for the proxy manager
-            self._file_name_request_server_queue.put(request_json)
+            # check if the file is already in the ceph_data_dict
+            object_descriptor = "{}/{}".format(namespace, key)
 
-            send_this = await self._loop.run_in_executor(
-                None, self._watch_file_send_queue)
+            with self._ceph_data_lock:
+                if object_descriptor in self._ceph_data_dict:
+                    bl.debug("Found {} in ceph data, updating "
+                             "timestamp".format(object_descriptor))
+                    self._ceph_data_dict[object_descriptor]["timestamp"] = (
+                        time.time())
+                else:
+                    bl.debug("Getting {}".format(object_descriptor))
+                    req = {"namespace": namespace, "key": key}
+                    # drop the request in the queue for the proxy manager
+                    self._file_name_request_server_queue.put(request_json)
 
-            if not send_this:
-                return None
+            # keep track how often we try to get data from the dictionary
+            counter = 0
+
+            # wait until we have everything downloaded
+            while True:
+
+                # wait a fraction of a second (rate throttling)
+                time.sleep(.1)
+
+                # get a list of keys in the GATEWAY_DATA
+                with self._ceph_data_lock:
+                    keys = list(self._ceph_data_dict.keys())
+
+                if object_descriptor in keys:
+                    with self._ceph_data_lock:
+                        self._ceph_data_dict[object_descriptor]["timestamp"] = time.time()
+                        send_this = self._ceph_data_dict[object_descriptor]["request_dict"]
+                        break
+
+                counter += 1
+                if (counter > 100):
+                    bl.warning("Too many iterations. Could not get data from ceph.")
+                    return
 
             bl.debug("Got file contents from queue")
 
@@ -460,7 +584,9 @@ class BackendManager(object):
         has to be reversed on the other side.
 
         """
-        bl.debug("Sending file request answer via socket")
+        connection_info = writer.get_extra_info('peername')
+        p_host = connection_info[0]
+        p_port = connection_info[1]
 
         out_dict = dict()
         out_dict["namespace"] = file_dictionary["namespace"]
@@ -468,6 +594,8 @@ class BackendManager(object):
         out_dict["contents"] = base64.b64encode(
             file_dictionary["value"]).decode()
         out_dict["tags"] = file_dictionary["tags"]
+
+        bl.debug("Sending {}/{} to client [{}]".format(out_dict["namespace"], out_dict["object"], p_port))
 
         todo_val = "file_request"
         request_answer_dictionary = {
