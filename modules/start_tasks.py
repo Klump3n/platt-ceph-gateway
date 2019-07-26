@@ -73,17 +73,6 @@ def start_tasks(args):
     #
     # a queue for returning the requested index
     queue_datacopy_backend_index_data = multiprocessing.Queue()
-    # #
-    # # an event for telling the backend that the index from the data copy is
-    # # ready for pickup
-    # event_datacopy_backend_index_ready = multiprocessing.Event()
-    # #
-    # # a pipe that connects the datacopy mgr and the backend class, for
-    # # transferring the requested index
-    # (
-    #     pipe_this_end_datacopy_backend_index,
-    #     pipe_that_end_datacopy_backend_index
-    # ) = multiprocessing.Pipe()
 
 
     # inter process communication for requesting the index for the data manager
@@ -105,6 +94,8 @@ def start_tasks(args):
     event_ceph_shutdown = multiprocessing.Event()
 
 
+    # threads would have done it probably but no time to change now
+    #
     localdata_manager = multiprocessing.Process(
         target=LocalDataManager,
         args=(

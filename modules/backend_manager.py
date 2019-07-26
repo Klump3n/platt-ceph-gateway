@@ -61,6 +61,7 @@ class BackendManager(object):
         # we need a threading lock and not a asyncio lock because we use them in
         # an executor (extra tread)
         self._ceph_data_lock = threading.Lock()
+
         ceph_data_task = self._loop.create_task(self._ceph_data_coro())
         perdiodically_delete_ceph_data_task = self._loop.create_task(
             self._periodic_ceph_file_deletion_coro())
@@ -230,20 +231,15 @@ class BackendManager(object):
         on connection.
 
         """
-        await self._loop.run_in_executor(
-            None, self._queue_cleanup_executor)
+        # await self._loop.run_in_executor(
+        #     None, self._queue_cleanup_executor)
 
-    def _queue_cleanup_executor(self):
-        """
-        Run this in a separate executor.
-
-        """
-        time.sleep(.5)          # wait for start
+        await asyncio.sleep(.5)          # wait for start
 
         while True:
 
             # repeat 1000 times per second, acts as rate throttling
-            time.sleep(1e-3)
+            await asyncio.sleep(1e-3)
 
             if not self._new_file_connection_active:
                 try:
@@ -257,6 +253,31 @@ class BackendManager(object):
                     self._index_data_queue.get(False)
                 except queue.Empty:
                     pass
+
+    # def _queue_cleanup_executor(self):
+    #     """
+    #     Run this in a separate executor.
+
+    #     """
+    #     time.sleep(.5)          # wait for start
+
+    #     while True:
+
+    #         # repeat 1000 times per second, acts as rate throttling
+    #         time.sleep(1e-3)
+
+    #         if not self._new_file_connection_active:
+    #             try:
+    #                 self._new_file_send_queue.get(False)
+    #             except queue.Empty:
+    #                 pass
+
+    #         if not self._index_connection_active:
+    #             self._get_index_server_event.clear()
+    #             try:
+    #                 self._index_data_queue.get(False)
+    #             except queue.Empty:
+    #                 pass
 
     ##################################################################
     # handle the cleanup of queues when connections are not active

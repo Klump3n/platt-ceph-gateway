@@ -5,11 +5,14 @@ Manages requests from the ceph cluster.
 """
 import time
 import queue
+import asyncio
 import multiprocessing
+from contextlib import suppress
 
 import modules.ceph_connection as cc
 
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
+
 
 class CephManager(object):
     def __init__(self,
@@ -62,12 +65,52 @@ class CephManager(object):
         self._queue_ceph_process_object_data = multiprocessing.Queue()
         self._queue_ceph_process_object_hash = multiprocessing.Queue()
 
+        # start the ceph connections
+        self._start_ceph_connections()
+
+        self._loop = asyncio.get_event_loop()
+
+        ceph_tasks_loop_task = self._loop.create_task(
+            self._ceph_task_coro())
+
+        self._tasks = [
+            ceph_tasks_loop_task
+        ]
+
+        try:
+            # start the tasks
+            self._loop.run_until_complete(asyncio.wait(self._tasks))
+
+        except KeyboardInterrupt:
+            pass
+
+        finally:
+
+            self._loop.stop()
+
+            all_tasks = asyncio.Task.all_tasks()
+
+            for task in all_tasks:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    self._loop.run_until_complete(task)
+
+            self._loop.close()
+
+            bl.debug("CephManager is shut down")
+
+
+    def _start_ceph_connections(self):
+        """
+        Start a list of ceph connections.
+
+        """
         # number of concurrent connections to the ceph cluster; pool size
         num_conns = 10          # at least 2
 
         assert(num_conns > 1)
 
-        self.conns = []
+        self._conns = []
 
         for _ in range(num_conns):
             conn = multiprocessing.Process(
@@ -85,29 +128,37 @@ class CephManager(object):
                     self._queue_ceph_process_object_hash
                 )
             )
-            self.conns.append(conn)
+            self._conns.append(conn)
 
+        if len(self._conns) < 2:
+            raise Exception("Need at least two concurrent connections to "
+                            "the cluster")
+
+        # start the connections
+        for conn in self._conns:
+            conn.start()
+
+        # give them some time to boot up
+        time.sleep(.1)
+
+    async def _ceph_task_coro(self):
+        """
+        Loop over all the possible task queues for ceph.
+
+        """
         try:
 
-            if len(self.conns) < 2:
-                raise Exception("Need at least two concurrent connections to "
-                                "the cluster")
-
-            # start the connections
-            for conn in self.conns:
-                conn.start()
-
-            # give them some time to boot up
-            time.sleep(.1)
-
-            throttle_loop = True
+            # seems sane.. 100 checks per second
+            # set to 0 if we need speed
+            loop_throttle_time = 1e-2
 
             while True:
 
                 # check for ceph shutdown
                 if self._event_ceph_shutdown.is_set():
-                    self._event_ceph_process_shutdown.set()
                     break
+
+                ################################################################
 
                 # first go through all the tasks and give them to the processes
                 #
@@ -119,6 +170,7 @@ class CephManager(object):
                         "task_info": {}
                     }
                     self._queue_ceph_process_new_task.put(task)
+
 
                 # request for hash of file
                 try:
@@ -138,23 +190,6 @@ class CephManager(object):
                 except queue.Empty:
                     pass
 
-                # # request for tags of file
-                # try:
-                #     tags_request = (
-                #         self._queue_datacopy_ceph_request_tags_for_new_file.get(
-                #             block=False))
-                #     namespace = hash_request["namespace"]
-                #     key = hash_request["key"]
-                #     task = {
-                #         "task": "read_object_tags",
-                #         "task_info": {
-                #             "namespace": namespace,
-                #             "object": key
-                #         }
-                #     }
-                #     self._queue_ceph_process_new_task.put(task)
-                # except queue.Empty:
-                #     pass
 
                 # request for everything of file
                 try:
@@ -173,6 +208,7 @@ class CephManager(object):
                 except queue.Empty:
                     pass
 
+                ################################################################
 
                 # then go through everything that the processes have done and
                 # return that to the other managers
@@ -180,6 +216,17 @@ class CephManager(object):
                 # get the index and dump it into the data copy
                 try:
                     fresh_index = self._queue_ceph_process_index.get(block=False)["index"]
+
+                except queue.Empty:
+                    # turn rate throttling back on
+                    if not loop_throttle_time:
+                        cl.verbose("Throttling loop again (index is updated)")
+                        loop_throttle_time = 1e-2
+
+                else:
+                    # disable rate throttling so we can get the whole index quickly
+                    cl.verbose("Unthrottling loop (updating index)")
+                    loop_throttle_time = 0
 
                     for namespace_index in fresh_index:
                         namespace = namespace_index["namespace"]
@@ -199,12 +246,6 @@ class CephManager(object):
                             }
                             self._queue_datacopy_ceph_filename_and_hash.put(ns_name_hash)
 
-                    # disable rate throttling so we can get the whole index quickly
-                    throttle_loop = False
-
-                except queue.Empty:
-                    # turn rate throttling back on
-                    throttle_loop = True
 
                 # get the hash for an object
                 try:
@@ -224,16 +265,13 @@ class CephManager(object):
                 except queue.Empty:
                     pass
 
-            if throttle_loop:
-                time.sleep(1e-4)    #  rate throttling
+                ################################################################
 
-        except KeyboardInterrupt:
-            # exit without errors
-            self._event_ceph_process_shutdown.set()
+                await asyncio.sleep(loop_throttle_time)    #  rate throttling
 
         finally:
-
+            # shut down the ceph connections
             self._event_ceph_process_shutdown.set()
             time.sleep(.1)
-            for conn in self.conns:
+            for conn in self._conns:
                 conn.terminate()

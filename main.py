@@ -52,7 +52,7 @@ def parse_commandline():
         "-l", "--log",
         help="Set the logging level",
         default="info",
-        choices=["debug", "info", "warning", "error", "critical", "quiet"]
+        choices=["debug", "verbose", "info", "warning", "error", "critical", "quiet"]
     )
     parser.add_argument(
         "--test",

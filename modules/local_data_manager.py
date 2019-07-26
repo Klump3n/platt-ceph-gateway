@@ -162,10 +162,10 @@ class LocalDataManager(object):
                     index = cls.get_index()
                     cls._queue_datacopy_backend_index_data.put(index)
 
-                await asyncio.sleep(1e-4)
-
             except KeyboardInterrupt:
                 return
+
+            await asyncio.sleep(1e-2)
 
     async def _periodic_index_update_coro(cls):
         """
@@ -183,35 +183,35 @@ class LocalDataManager(object):
         Read the queue for new things to do.
 
         """
-        new_task = await cls._loop.run_in_executor(
-            None, cls._index_updater_executor, cls)
 
-    def _index_updater_executor(cls):
-        """
-        Read the queue in a separate executor.
+        # 100 checks per second
+        # set to 0 if we actually read something from the queue
+        loop_throttle_time = 1e-2
 
-        """
         while True:
 
-            # if cls._shutdown_local_data_manager.is_set():
-            #     return
+            if cls._shutdown_local_data_manager.is_set():
+                return
 
+            # add whatever ceph is throwing at us to the local data copy
             try:
+                new_file_dict = cls._queue_datacopy_ceph_filename_and_hash.get(block=False)
 
-                # add whatever ceph is throwing at us to the local data copy
-                try:
-                    new_file_dict = cls._queue_datacopy_ceph_filename_and_hash.get(block=False)
-                    namespace = new_file_dict["namespace"]
-                    key = new_file_dict["key"]
-                    sha1sum = new_file_dict["sha1sum"]
-                    cls.add_file(namespace, key, sha1sum)
-                except queue.Empty:
+            except queue.Empty:
+                # reactivate loop throttling
+                if not loop_throttle_time:
+                    loop_throttle_time = 1e-2
 
-                    # reset the old index
-                    pass
+            else:
+                # deactivate loop throttling
+                loop_throttle_time = 0
 
-            except KeyboardInterrupt:
-                pass
+                namespace = new_file_dict["namespace"]
+                key = new_file_dict["key"]
+                sha1sum = new_file_dict["sha1sum"]
+                cls.add_file(namespace, key, sha1sum)
+
+            await asyncio.sleep(loop_throttle_time)
 
     @classmethod
     def _reset(cls):
