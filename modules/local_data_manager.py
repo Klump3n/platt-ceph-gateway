@@ -134,12 +134,8 @@ class LocalDataManager(object):
                     sha1sum = new_file_dict["sha1sum"]
 
                     # if we received a sha1sum we drop the file in the database
-                    if not sha1sum == "":
-                        cls.add_file(namespace, key, sha1sum)
-                    # else we ask ceph for the hash
-                    else:
-                        cls._queue_datacopy_ceph_request_hash_for_new_file.put(new_file_dict)
-                        # NOTE: If ceph does not answer this request we have to make sure that it still lands in the database
+                    cls._queue_datacopy_ceph_request_hash_for_new_file.put(new_file_dict)
+
                 except queue.Empty:
                     pass
 
@@ -165,10 +161,7 @@ class LocalDataManager(object):
                     cls._event_datacopy_backend_get_index.clear()
                     index = cls.get_index()
                     cls._queue_datacopy_backend_index_data.put(index)
-                    # cls._pipe_this_end_datacopy_backend_index.send(index)
-                    # print("3")
-                    # cls._event_datacopy_backend_index_ready.set()
-                    # print("4")
+
                 await asyncio.sleep(1e-4)
 
             except KeyboardInterrupt:
@@ -316,31 +309,6 @@ class LocalDataManager(object):
                     cl.debug("Can not add file {}/{}".format(namespace, key))
                     return
 
-                # usage_rest = field.split(".")
-                # usage = usage_rest[0]
-                # if usage == "elements":
-                #     elemtype = usage_rest[1]
-                #     fieldname = None
-                # elif usage == "nodes":
-                #     elemtype = None
-                #     fieldname = None
-                # elif usage == "nodes_ma":
-                #     elemtype = None
-                #     fieldname = None
-                # elif usage == "elemental":
-                #     elemtype = usage_rest[1]
-                #     fieldname = "_".join(str(r) for r in usage_rest[2:])
-                # elif usage == "nodal":
-                #     elemtype = None
-                #     fieldname = "_".join(str(r) for r in usage_rest[1:])
-                # elif usage == "elset":
-                #     elemtype = usage_rest[1]
-                #     fieldname = ".".join(str(r) for r in usage_rest[2:])
-                # elif usage == "skin":
-                #     elemtype = usage_rest[1]
-                #     fieldname = None
-
-
             except:
                 # YOU SHALL NOT PARSE
                 cl.debug("Can not add file {}/{}".format(namespace, key))
@@ -361,11 +329,10 @@ class LocalDataManager(object):
             if usage not in cls._local_copy[namespace][timestep][simtype]:
                 cls._local_copy[namespace][timestep][simtype][usage] = {}
 
-            # if usage == "nodes":
             if usage in ["nodes", "boundingbox"]:
                 i_entry = cls._local_copy[namespace][timestep][simtype][usage]
 
-            if usage == "elements":
+            if usage in ["elements", "elementactivationbitmap"]:
                 if elemtype not in cls._local_copy[namespace][timestep][simtype][usage]:
                     cls._local_copy[namespace][timestep][simtype][usage][elemtype] = {}
                 i_entry = cls._local_copy[namespace][timestep][simtype][usage][elemtype]
@@ -378,14 +345,13 @@ class LocalDataManager(object):
                 i_entry = cls._local_copy[namespace][timestep][simtype][usage][skintype][elemtype]
 
             if usage in ["elemental", "elset"]:
-            # if usage == "elemental":
                 if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
                     cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
                 if elemtype not in cls._local_copy[namespace][timestep][simtype][usage][fieldname]:
                     cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype] = {}
                 i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype]
 
-            if usage == "nodal":
+            if usage in ["nodal", "nset"]:
                 if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
                     cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
                 i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname]
@@ -400,5 +366,5 @@ class LocalDataManager(object):
             try:
                 return cls._local_copy[namespace]
             except KeyError:
-                return None
+                return dict()   # basically None
         return cls._local_copy

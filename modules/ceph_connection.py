@@ -63,7 +63,7 @@ def get_namespaces(ceph_conf, ceph_pool, ceph_user):
         cl.warning("no data for parsing present")
         return None
 
-    cl.debug("parsing data in .radosoutput/radosoutput.txt")
+    cl.verbose("parsing data in .radosoutput/radosoutput.txt")
 
     with open(str(rados_file), 'r') as rf:
         while True:
@@ -76,7 +76,7 @@ def get_namespaces(ceph_conf, ceph_pool, ceph_user):
                 if pts[0] != "":
                     namespaces.add(pts[0])
 
-    cl.debug("got {} namespaces".format(len(namespaces)))
+    cl.verbose("got {} namespaces".format(len(namespaces)))
 
     return namespaces
 

@@ -369,7 +369,7 @@ class BackendManager(object):
             if not new_file_in_queue:
                 return
 
-            bl.debug("Received {} for sending via socket".format(
+            bl.debug("Received info for {} for sending via socket".format(
                 new_file_in_queue))
 
             await self._inform_client_new_file(
@@ -450,8 +450,7 @@ class BackendManager(object):
                 self._get_index_server_event.set()
 
                 index = self._index_data_queue.get(True, 10)  # wait up to 10 seconds
-                if index:
-                    await self._send_index_to_client(reader, writer, index)
+                await self._send_index_to_client(reader, writer, index)
 
 
     async def _send_index_to_client(self, reader, writer, index):

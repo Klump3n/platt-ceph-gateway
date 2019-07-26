@@ -103,7 +103,7 @@ class SimulationManager(object):
         try:
             data_tab_split = data.split("\t")
             if not len(data_tab_split) == 3:
-                sl.debug("Received package is not formatted correctly")
+                sl.debug("Received package is not formatted correctly (split on tabs)")
                 print(data)
                 writer.close()
                 return
