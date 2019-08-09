@@ -29,7 +29,9 @@ class CephManager(object):
                  queue_backend_ceph_answer_file_name_contents_hash,
 
                  event_datacopy_ceph_update_index,
-                 queue_datacopy_ceph_filename_and_hash
+                 queue_datacopy_ceph_filename_and_hash,
+
+                 lock_datacopy_ceph_filename_and_hash
     ):
 
         self._ceph_conf = ceph_conf
@@ -54,6 +56,8 @@ class CephManager(object):
         self._queue_datacopy_ceph_filename_and_hash = (
             queue_datacopy_ceph_filename_and_hash
         )
+
+        self._lock_datacopy_ceph_filename_and_hash = lock_datacopy_ceph_filename_and_hash
 
         # inter process communication between ceph manager and cepj connections
         self._queue_ceph_process_new_task = multiprocessing.Queue()
@@ -228,24 +232,26 @@ class CephManager(object):
                     cl.verbose("Unthrottling loop (updating index)")
                     loop_throttle_time = 0
 
-                    for namespace_index in fresh_index:
-                        namespace = namespace_index["namespace"]
+                    with self._lock_datacopy_ceph_filename_and_hash:  # LOCK
 
-                        for obj in namespace_index["index"].keys():
-                            tags = namespace_index["index"][obj]
+                        for namespace_index in fresh_index:
+                            namespace = namespace_index["namespace"]
 
-                            try:
-                                sha1sum = tags["sha1sum"]
-                            except KeyError:
-                                sha1sum = ""
+                            for obj in namespace_index["index"].keys():
+                                tags = namespace_index["index"][obj]
 
-                            ns_name_hash = {
-                                "namespace": namespace,
-                                "key": obj,
-                                "sha1sum": sha1sum
-                            }
-                            self._queue_datacopy_ceph_filename_and_hash.put(ns_name_hash)
+                                try:
+                                    sha1sum = tags["sha1sum"]
+                                except KeyError:
+                                    sha1sum = ""
 
+                                ns_name_hash = {
+                                    "namespace": namespace,
+                                    "key": obj,
+                                    "sha1sum": sha1sum
+                                }
+
+                                self._queue_datacopy_ceph_filename_and_hash.put(ns_name_hash)
 
                 # get the hash for an object
                 try:

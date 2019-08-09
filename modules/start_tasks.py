@@ -83,7 +83,9 @@ def start_tasks(args):
     #
     # a queue for updating the local datacopy with these names and hashes
     queue_datacopy_ceph_filename_and_hash = multiprocessing.Queue()
-
+    #
+    # a lock for queue_datacopy_ceph_filename_and_hash
+    lock_datacopy_ceph_filename_and_hash = multiprocessing.Lock()
 
     # inter process communication for shutting down processes
     #
@@ -92,6 +94,9 @@ def start_tasks(args):
     #
     # an event for shutting down the ceph manager
     event_ceph_shutdown = multiprocessing.Event()
+    #
+    # an event for shutting down the local data manager
+    event_data_manager_shutdown = multiprocessing.Event()
 
 
     # threads would have done it probably but no time to change now
@@ -108,7 +113,9 @@ def start_tasks(args):
             # event_datacopy_backend_index_ready,
             # pipe_this_end_datacopy_backend_index,
             event_datacopy_ceph_update_index,
-            queue_datacopy_ceph_filename_and_hash
+            queue_datacopy_ceph_filename_and_hash,
+            event_data_manager_shutdown,
+            lock_datacopy_ceph_filename_and_hash
         )
     )
     simulation_manager = multiprocessing.Process(
@@ -146,7 +153,8 @@ def start_tasks(args):
             queue_backend_ceph_request_file,
             queue_backend_ceph_answer_file_name_contents_hash,
             event_datacopy_ceph_update_index,
-            queue_datacopy_ceph_filename_and_hash
+            queue_datacopy_ceph_filename_and_hash,
+            lock_datacopy_ceph_filename_and_hash
         )
     )
 
@@ -167,6 +175,7 @@ def start_tasks(args):
 
         event_backend_manager_shutdown.set()
         event_ceph_shutdown.set()
+        # event_data_manager_shutdown.set()
         time.sleep(.1)          # Give the process some time to flush it all out
 
     finally:

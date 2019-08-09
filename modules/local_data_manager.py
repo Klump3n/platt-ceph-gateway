@@ -29,7 +29,9 @@ class LocalDataManager(object):
                 # event_datacopy_backend_index_ready,
                 # pipe_this_end_datacopy_backend_index,
                 event_datacopy_ceph_update_index,
-                queue_datacopy_ceph_filename_and_hash
+                queue_datacopy_ceph_filename_and_hash,
+                event_data_manager_shutdown,
+                lock_datacopy_ceph_filename_and_hash
     ):
         cl.info("Starting LocalDataManager")
         if not cls._instance:
@@ -44,7 +46,9 @@ class LocalDataManager(object):
                          # event_datacopy_backend_index_ready,
                          # pipe_this_end_datacopy_backend_index,
                          event_datacopy_ceph_update_index,
-                         queue_datacopy_ceph_filename_and_hash
+                         queue_datacopy_ceph_filename_and_hash,
+                         event_data_manager_shutdown,
+                         lock_datacopy_ceph_filename_and_hash
             )
         return cls._instance
 
@@ -58,7 +62,9 @@ class LocalDataManager(object):
                  # event_datacopy_backend_index_ready,
                  # pipe_this_end_datacopy_backend_index,
                  event_datacopy_ceph_update_index,
-                 queue_datacopy_ceph_filename_and_hash
+                 queue_datacopy_ceph_filename_and_hash,
+                 event_data_manager_shutdown,
+                 lock_datacopy_ceph_filename_and_hash
     ):
 
         # receive new file information from the simulation
@@ -81,6 +87,11 @@ class LocalDataManager(object):
         cls._event_datacopy_ceph_update_index = event_datacopy_ceph_update_index
         cls._queue_datacopy_ceph_filename_and_hash = queue_datacopy_ceph_filename_and_hash
 
+        # shutdown event
+        cls._event_data_manager_shutdown = event_data_manager_shutdown
+
+        # index queue lock
+        cls._lock_datacopy_ceph_filename_and_hash = lock_datacopy_ceph_filename_and_hash
 
         try:
             #
@@ -109,7 +120,7 @@ class LocalDataManager(object):
             cls._loop.call_soon_threadsafe(cls._loop.stop())
 
             cls.__del__()
-            cl.debug("Shutdown of ceph_connection process complete")
+            cl.debug("Shutdown of local data manager process complete")
 
         except KeyboardInterrupt:
             # Ctrl C passes quietly
@@ -121,9 +132,6 @@ class LocalDataManager(object):
 
         """
         while True:
-
-            # if cls._shutdown_local_data_manager.is_set():
-            #     return
 
             try:
                 # try to read the queue for new files
@@ -183,35 +191,36 @@ class LocalDataManager(object):
         Read the queue for new things to do.
 
         """
-
-        # 100 checks per second
-        # set to 0 if we actually read something from the queue
-        loop_throttle_time = 1e-2
-
         while True:
 
-            if cls._shutdown_local_data_manager.is_set():
-                return
+            new_files = list()
 
-            # add whatever ceph is throwing at us to the local data copy
-            try:
-                new_file_dict = cls._queue_datacopy_ceph_filename_and_hash.get(block=False)
+            if (cls._queue_datacopy_ceph_filename_and_hash.qsize() > 0):
 
-            except queue.Empty:
-                # reactivate loop throttling
-                if not loop_throttle_time:
-                    loop_throttle_time = 1e-2
+                with cls._lock_datacopy_ceph_filename_and_hash:
 
-            else:
-                # deactivate loop throttling
-                loop_throttle_time = 0
+                    while True:
+                        try:
+                            new_file_dict = cls._queue_datacopy_ceph_filename_and_hash.get(block=False)
+                        except queue.Empty:
+                            break
+                        else:
+                            new_files.append(new_file_dict)
 
-                namespace = new_file_dict["namespace"]
-                key = new_file_dict["key"]
-                sha1sum = new_file_dict["sha1sum"]
-                cls.add_file(namespace, key, sha1sum)
+            if len(new_files) > 0:
+                cl.verbose("Got {} files from queue".format(len(new_files)))
 
-            await asyncio.sleep(loop_throttle_time)
+                for new_file_dict in new_files:
+
+                    namespace = new_file_dict["namespace"]
+                    key = new_file_dict["key"]
+                    sha1sum = new_file_dict["sha1sum"]
+
+                    cls.add_file(namespace, key, sha1sum)
+
+                cl.verbose("Done adding files to index")
+
+            await asyncio.sleep(1)  # check once per second; things should appear in large chunks anyway
 
     @classmethod
     def _reset(cls):
@@ -265,6 +274,10 @@ class LocalDataManager(object):
 
                 simtype = objects_definition[0]
 
+                # if the simtype is not ta or ma the file format is not supported
+                if simtype not in ["ta", "ma"]:
+                    raise ValueError
+
                 # parse mesh or field, only field has field_type
                 if objects_definition[1] in ["nodal", "elemental"]:
                     to_parse = "field"
@@ -306,59 +319,62 @@ class LocalDataManager(object):
                         pass
 
                 else:
-                    cl.debug("Can not add file {}/{}".format(namespace, key))
+                    cl.debug_warning("Can not add file {}/{}".format(namespace, key))
                     return
 
             except:
                 # YOU SHALL NOT PARSE
-                cl.debug("Can not add file {}/{}".format(namespace, key))
+                cl.debug_warning("Can not add file {}/{}".format(namespace, key))
                 return
 
-            cls._hashset.add(hashed_key)
+            try:
+                cls._hashset.add(hashed_key)
 
-            # Create the dictionary
-            if namespace not in cls._local_copy:
-                cls._local_copy[namespace] = {}
+                # Create the dictionary
+                if namespace not in cls._local_copy:
+                    cls._local_copy[namespace] = {}
 
-            if timestep not in cls._local_copy[namespace]:
-                cls._local_copy[namespace][timestep] = {}
+                if timestep not in cls._local_copy[namespace]:
+                    cls._local_copy[namespace][timestep] = {}
 
-            if simtype not in cls._local_copy[namespace][timestep]:
-                cls._local_copy[namespace][timestep][simtype] = {}
+                if simtype not in cls._local_copy[namespace][timestep]:
+                    cls._local_copy[namespace][timestep][simtype] = {}
 
-            if usage not in cls._local_copy[namespace][timestep][simtype]:
-                cls._local_copy[namespace][timestep][simtype][usage] = {}
+                if usage not in cls._local_copy[namespace][timestep][simtype]:
+                    cls._local_copy[namespace][timestep][simtype][usage] = {}
 
-            if usage in ["nodes", "boundingbox"]:
-                i_entry = cls._local_copy[namespace][timestep][simtype][usage]
+                if usage in ["nodes", "boundingbox"]:
+                    i_entry = cls._local_copy[namespace][timestep][simtype][usage]
 
-            if usage in ["elements", "elementactivationbitmap"]:
-                if elemtype not in cls._local_copy[namespace][timestep][simtype][usage]:
-                    cls._local_copy[namespace][timestep][simtype][usage][elemtype] = {}
-                i_entry = cls._local_copy[namespace][timestep][simtype][usage][elemtype]
+                if usage in ["elements", "elementactivationbitmap"]:
+                    if elemtype not in cls._local_copy[namespace][timestep][simtype][usage]:
+                        cls._local_copy[namespace][timestep][simtype][usage][elemtype] = {}
+                    i_entry = cls._local_copy[namespace][timestep][simtype][usage][elemtype]
 
-            if usage == "skin":
-                if skintype not in cls._local_copy[namespace][timestep][simtype][usage]:
-                    cls._local_copy[namespace][timestep][simtype][usage][skintype] = {}
-                if elemtype not in cls._local_copy[namespace][timestep][simtype][usage][skintype]:
-                    cls._local_copy[namespace][timestep][simtype][usage][skintype][elemtype] = {}
-                i_entry = cls._local_copy[namespace][timestep][simtype][usage][skintype][elemtype]
+                if usage == "skin":
+                    if skintype not in cls._local_copy[namespace][timestep][simtype][usage]:
+                        cls._local_copy[namespace][timestep][simtype][usage][skintype] = {}
+                    if elemtype not in cls._local_copy[namespace][timestep][simtype][usage][skintype]:
+                        cls._local_copy[namespace][timestep][simtype][usage][skintype][elemtype] = {}
+                    i_entry = cls._local_copy[namespace][timestep][simtype][usage][skintype][elemtype]
 
-            if usage in ["elemental", "elset"]:
-                if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
-                    cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
-                if elemtype not in cls._local_copy[namespace][timestep][simtype][usage][fieldname]:
-                    cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype] = {}
-                i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype]
+                if usage in ["elemental", "elset"]:
+                    if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
+                        cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
+                    if elemtype not in cls._local_copy[namespace][timestep][simtype][usage][fieldname]:
+                        cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype] = {}
+                    i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname][elemtype]
 
-            if usage in ["nodal", "nset"]:
-                if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
-                    cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
-                i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname]
+                if usage in ["nodal", "nset"]:
+                    if fieldname not in cls._local_copy[namespace][timestep][simtype][usage]:
+                        cls._local_copy[namespace][timestep][simtype][usage][fieldname] = {}
+                    i_entry = cls._local_copy[namespace][timestep][simtype][usage][fieldname]
 
-            i_entry['object_key'] = key
-            # i_entry['object_key'] = namespace_key.split("\t")[1]
-            i_entry['sha1sum'] = sha1sum
+                i_entry['object_key'] = key
+                i_entry['sha1sum'] = sha1sum
+
+            except:
+                pass
 
     @classmethod
     def get_index(cls, namespace=None):
