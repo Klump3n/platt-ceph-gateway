@@ -110,3 +110,5 @@ auto/
 !rados/*
 
 .radosoutput/
+
+.unison/*
