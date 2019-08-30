@@ -61,6 +61,11 @@ class CephManager(object):
 
         # inter process communication between ceph manager and cepj connections
         self._queue_ceph_process_new_task = multiprocessing.Queue()
+        self._queue_ceph_process_new_task_data = multiprocessing.Queue()
+        self._queue_ceph_process_new_task_hashes = multiprocessing.Queue()
+        self._queue_ceph_process_new_task_index_hashes = multiprocessing.Queue()
+        self._queue_ceph_process_new_task_index_namespaces = multiprocessing.Queue()
+        self._queue_ceph_process_new_task_index = multiprocessing.Queue()
         self._event_ceph_process_shutdown = multiprocessing.Event()
 
         self._queue_ceph_process_index = multiprocessing.Queue()  # gets a list of namespaces
@@ -116,23 +121,67 @@ class CephManager(object):
 
         self._conns = []
 
-        for _ in range(num_conns):
-            conn = multiprocessing.Process(
-                target=cc.CephConnection,
-                args=(
-                    self._ceph_conf,
-                    self._ceph_pool,
-                    self._ceph_user,
-                    self._queue_ceph_process_new_task,
-                    self._event_ceph_process_shutdown,
-                    self._queue_ceph_process_index,
-                    self._queue_ceph_process_namespace_index,
-                    self._queue_ceph_process_object_tags,
-                    self._queue_ceph_process_object_data,
-                    self._queue_ceph_process_object_hash
+        # for _ in range(num_conns):
+        #     conn = multiprocessing.Process(
+        #         target=cc.CephConnection,
+        #         args=(
+        #             self._ceph_conf,
+        #             self._ceph_pool,
+        #             self._ceph_user,
+        #             queue_task_pattern,
+        #             self._queue_ceph_process_new_task,
+        #             self._queue_ceph_process_new_task_data,
+        #             self._queue_ceph_process_new_task_hashes,
+        #             self._queue_ceph_process_new_task_index_hashes,
+        #             self._queue_ceph_process_new_task_index_namespaces,
+        #             self._queue_ceph_process_new_task_index,
+        #             self._event_ceph_process_shutdown,
+        #             self._queue_ceph_process_index,
+        #             self._queue_ceph_process_namespace_index,
+        #             self._queue_ceph_process_object_tags,
+        #             self._queue_ceph_process_object_data,
+        #             self._queue_ceph_process_object_hash
+        #         )
+        #     )
+        #     self._conns.append(conn)
+
+        workers = [
+            {"pattern": "data", "count": 4},
+            {"pattern": "hashes", "count": 6},
+            # {"pattern": "index_hashes", "count": 5},
+            {"pattern": "index_namespaces", "count": 8},
+            {"pattern": "index", "count": 1}
+        ]
+
+        for wrkr_type in workers:
+
+            # need at least 1 of each
+            assert(wrkr_type["count"] >= 1)
+
+            for _ in range(wrkr_type["count"]):
+
+                conn = multiprocessing.Process(
+                    target=cc.CephConnection,
+                    args=(
+                        self._ceph_conf,
+                        self._ceph_pool,
+                        self._ceph_user,
+                        wrkr_type["pattern"],
+                        self._queue_ceph_process_new_task,
+                        self._queue_ceph_process_new_task_data,
+                        self._queue_ceph_process_new_task_hashes,
+                        # self._queue_ceph_process_new_task_index_hashes,
+                        self._queue_ceph_process_new_task_index_namespaces,
+                        self._queue_ceph_process_new_task_index,
+                        self._event_ceph_process_shutdown,
+                        self._queue_ceph_process_index,
+                        self._queue_ceph_process_namespace_index,
+                        self._queue_ceph_process_object_tags,
+                        self._queue_ceph_process_object_data,
+                        self._queue_ceph_process_object_hash
+                    )
                 )
-            )
-            self._conns.append(conn)
+                self._conns.append(conn)
 
         if len(self._conns) < 2:
             raise Exception("Need at least two concurrent connections to "
@@ -173,8 +222,8 @@ class CephManager(object):
                         "task": "read_index",
                         "task_info": {}
                     }
-                    self._queue_ceph_process_new_task.put(task)
-
+                    self._queue_ceph_process_new_task_index.put(task)
+                    # self._queue_ceph_process_new_task.put(task)
 
                 # request for hash of file
                 try:
@@ -190,10 +239,10 @@ class CephManager(object):
                             "object": key
                         }
                     }
-                    self._queue_ceph_process_new_task.put(task)
+                    self._queue_ceph_process_new_task_hashes.put(task)
+                    # self._queue_ceph_process_new_task.put(task)
                 except queue.Empty:
                     pass
-
 
                 # request for everything of file
                 try:
@@ -208,7 +257,8 @@ class CephManager(object):
                             "object": key
                         }
                     }
-                    self._queue_ceph_process_new_task.put(task)
+                    self._queue_ceph_process_new_task_data.put(task)
+                    # self._queue_ceph_process_new_task.put(task)
                 except queue.Empty:
                     pass
 

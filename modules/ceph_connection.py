@@ -10,6 +10,7 @@ import pathlib
 import asyncio
 import hashlib
 import subprocess
+import functools
 import multiprocessing
 
 try:
@@ -78,6 +79,7 @@ def get_namespaces(ceph_conf, ceph_pool, ceph_user):
 
     cl.verbose("got {} namespaces".format(len(namespaces)))
 
+
     return namespaces
 
 
@@ -91,7 +93,13 @@ class CephConnection(object):
             ceph_config,
             ceph_pool,
             pool_user,
+            task_pattern,       # pattern to follow when doing tasks
             queue_ceph_task,    # queue for receiving things to do
+            queue_ceph_task_data,    # queue for task to retrieve data (contents and hashes)
+            queue_ceph_task_hashes,    # queue for task to retrieve hashes (externally)
+            # queue_ceph_task_index_hashes,    # queue for retrieving the hash of a file when creating the index
+            queue_ceph_task_index_namespace,  # queue for retrieving the index of a namespace
+            queue_ceph_task_index,    # queue for retrieving the index (this will start a series of events like getting the namespaces, then the files in every namespace and then the respective hashes)
             event_shutdown_process,  # when this event is set the connection will be closed
             queue_index,             # return queue for the index
             queue_namespace_index,   # return queue for the index for a namespace
@@ -107,7 +115,15 @@ class CephConnection(object):
         self._target_pool = ceph_pool
         self._rados_id = pool_user
 
+        self._task_pattern = task_pattern
+
         self._queue_ceph_task = queue_ceph_task
+        self._queue_ceph_task_data = queue_ceph_task_data
+        self._queue_ceph_task_hashes = queue_ceph_task_hashes
+        self._queue_ceph_task_index = queue_ceph_task_index
+        self._queue_ceph_task_index_namespace = queue_ceph_task_index_namespace
+        # self._queue_ceph_task_index_hashes = queue_ceph_task_index_hashes
+
         self._event_shutdown_process = event_shutdown_process
 
         self._queue_index = queue_index
@@ -138,7 +154,7 @@ class CephConnection(object):
 
             # task for reading the queue
             self._queue_reader_task = self._loop.create_task(
-                self._queue_reader_coro())
+                self._queue_reader_coro(self._task_pattern))
 
             self._loop.run_until_complete(self._queue_reader_task)
 
@@ -152,14 +168,65 @@ class CephConnection(object):
             # Ctrl C passes quietly
             pass
 
-    async def _queue_reader_coro(self):
+    async def _queue_reader_coro(self, pattern=None):
         """
         Read the queue for new things to do.
 
         """
+        # select a priority pattern and parse the queues based on that
+        # we do this because it is very difficult to get a fast priority
+        # queue when multiprocessing is involved
+        #
+        data_pattern = [
+            {"queue": self._queue_ceph_task_data, "blocking_time": 1e-1},
+            {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
+            # {"queue": self._queue_ceph_task_index_hashes, "blocking_time": 0}
+        ]
+        #
+        hashes_pattern = [
+            {"queue": self._queue_ceph_task_hashes, "blocking_time": 1e-1},
+            {"queue": self._queue_ceph_task_data, "blocking_time": 0},
+            # {"queue": self._queue_ceph_task_index_hashes, "blocking_time": 0}
+        ]
+        #
+        # index_hashes_pattern = [
+        #     {"queue": self._queue_ceph_task_index_hashes, "blocking_time": 1e-1},
+        #     {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
+        #     {"queue": self._queue_ceph_task_data, "blocking_time": 0}
+        # ]
+        # #
+        index_namespaces_pattern = [
+            {"queue": self._queue_ceph_task_index_namespace, "blocking_time": 1e-1},
+            {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
+            {"queue": self._queue_ceph_task_data, "blocking_time": 0}
+        ]
+        #
+        index_pattern = [
+            {"queue": self._queue_ceph_task_index, "blocking_time": 1e-1},
+            {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
+            {"queue": self._queue_ceph_task_data, "blocking_time": 0}
+        ]
+
+        if pattern == "data":
+            queue_pattern = data_pattern
+        elif pattern == "hashes":
+            queue_pattern = hashes_pattern
+        # elif pattern == "index_hashes":
+        #     queue_pattern = index_hashes_pattern
+        elif pattern == "index_namespaces":
+            queue_pattern = index_namespaces_pattern
+        elif pattern == "index":
+            queue_pattern = index_pattern
+        else:
+            cl.verbose_warning("Pattern {} not found, assigning None".format(pattern))
+            queue_pattern = None
+
         while True:
             new_task = await self._loop.run_in_executor(
-                None, self._queue_reader_executor)
+                None,
+                functools.partial(self._queue_reader_executor,
+                                  pattern=queue_pattern)
+            )
 
             if not new_task:
                 # return None when we want to stop
@@ -174,32 +241,41 @@ class CephConnection(object):
 
             else:
 
-                if (task == "read_index"):
-                    cl.debug("Reading index, task_info = {}".format(task_info))
-                    index_dict = self.read_index(task_info)
-                    self._queue_index.put(index_dict)
-
-                if (task == "read_namespace_index"):
-                    cl.debug("Reading namespace index, task_info = {}".format(task_info))
-                    namespace_index_dict = self.read_index_for_namespace(task_info)
-                    self._queue_namespace_index.put(namespace_index_dict)
-
                 if (task == "read_object_value"):
                     cl.debug("Reading object value, task_info = {}".format(task_info))
                     object_value_dict = self.read_everything_for_object(task_info)
                     self._queue_object_data.put(object_value_dict)
-
-                if (task == "read_object_tags"):
-                    cl.debug("Reading object tags, task_info = {}".format(task_info))
-                    object_value_dict = self.read_tags_for_object(task_info)
-                    self._queue_object_tags.put(object_value_dict)
 
                 if (task == "read_object_hash"):
                     cl.debug("Reading object hash, task_info = {}".format(task_info))
                     object_value_dict = self.read_hash_for_object(task_info)
                     self._queue_object_hash.put(object_value_dict)
 
-    def _queue_reader_executor(self):
+                if (task == "read_object_tags"):
+                    cl.debug("Reading object tags, task_info = {}".format(task_info))
+                    object_value_dict = self.read_tags_for_object(task_info)
+                    self._queue_object_tags.put(object_value_dict)
+
+                if (task == "read_namespace_index"):
+                    cl.debug("Reading namespace index, task_info = {}".format(task_info))
+                    namespace_index_dict = self.read_index_for_namespace(task_info)
+                    self._queue_namespace_index.put(namespace_index_dict)
+
+                if (task == "read_index"):
+                    cl.debug("Reading index, task_info = {}".format(task_info))
+                    index_dict = self.read_index(task_info)
+                    self._queue_index.put(index_dict)
+
+                    # empty the index request queue, we just finished updating
+                    # and dont need to do it for a while
+                    while True:
+                        try:
+                            self._queue_ceph_task_index.get()
+                        except queue.Empty:
+                            break
+
+
+    def _queue_reader_executor(self, pattern=None):
         """
         Read the queue in a separate executor.
 
@@ -210,12 +286,38 @@ class CephConnection(object):
                 cl.debug("Ceph connection shutdown event is set")
                 return None
 
-            try:
-                new_ceph_task = self._queue_ceph_task.get(True, .1)
-            except queue.Empty:
-                pass
-            else:
-                return new_ceph_task
+            # default pattern, not recommended but if nothing is provided we do this
+            if not pattern:
+                pattern = [
+                    {"queue": self._queue_ceph_task_data, "blocking_time": 1e-1},
+                    {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
+                    # {"queue": self._queue_ceph_task_index_hashes, "blocking_time": 0},
+                    {"queue": self._queue_ceph_task_index_namespace, "blocking_time": 0},
+                    {"queue": self._queue_ceph_task_index, "blocking_time": 0}
+                ]
+
+            override_blocking = False
+
+            for i, q in enumerate(pattern):
+                try:
+                    if override_blocking or q["blocking_time"] == 0:
+                        new_ceph_task = q["queue"].get(False)
+                    else:
+                        new_ceph_task = q["queue"].get(True, q["blocking_time"])
+
+                except queue.Empty:
+                    # block on the first queue if we have gotten nothing from all queues
+                    if pattern[i] == pattern[-1]:
+                        # cl.verbose("override_blocking = False")
+                        override_blocking = False
+
+                else:
+                    # if we got something from a non priority queue we could speed through this a bit faster
+                    if (i >= 1):
+                        cl.verbose("override_blocking = True")
+                        override_blocking = True
+
+                    return new_ceph_task
 
     def __del__(self):
         """
@@ -331,6 +433,45 @@ class CephConnection(object):
         Return the complete index.
 
         """
+
+        # # uncomment this section if you are debugging
+        # # it creates a snapshot of the current index and just loads that on
+        # # every fresh start
+        # # make sure to delete index.pickle once you are done
+
+        # import pickle
+
+        # try:
+        #     with open("index.pickle", "rb") as idx:
+        #         index = pickle.load(idx)
+        #     print("INDEX LOADED")
+
+        # except FileNotFoundError:
+
+        #     namespaces = get_namespaces(
+        #         self._conffile, self._target_pool, self._rados_id)
+        #     expected_namespaces = namespaces.copy()
+
+        #     for namespace in namespaces:
+        #         task_dict = {
+        #             "task": "read_namespace_index",
+        #             "task_info": {
+        #                 "namespace": namespace
+        #             }
+        #         }
+        #         self._queue_ceph_task_index_namespace.put(task_dict)
+
+        #     index = list()
+
+        #     while not len(expected_namespaces) == 0:
+        #         namespace_index = self._queue_namespace_index.get()
+        #         index.append(namespace_index)
+        #         index_name = namespace_index["namespace"]
+        #         expected_namespaces.remove(index_name)
+
+        #     with open("index.pickle", "wb") as idx:
+        #         pickle.dump(index, idx)
+
         namespaces = get_namespaces(
             self._conffile, self._target_pool, self._rados_id)
         expected_namespaces = namespaces.copy()
@@ -342,7 +483,7 @@ class CephConnection(object):
                     "namespace": namespace
                 }
             }
-            self._queue_ceph_task.put(task_dict)
+            self._queue_ceph_task_index_namespace.put(task_dict)
 
         index = list()
 

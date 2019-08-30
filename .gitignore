@@ -112,3 +112,5 @@ auto/
 .radosoutput/
 
 .unison/*
+
+*.pickle

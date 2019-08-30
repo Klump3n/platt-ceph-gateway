@@ -181,10 +181,16 @@ class LocalDataManager(object):
 
         """
         await asyncio.sleep(5)  # wait for other processes to get their stuff together
-        while True:
-            cl.info("Updating index")
-            cls._event_datacopy_ceph_update_index.set()
-            await asyncio.sleep(600)  #  wait 10 minutes
+
+        # this messes with the tracking of datasets
+
+        # while True:
+        #     cl.info("Updating index")
+        #     cls._event_datacopy_ceph_update_index.set()
+        #     await asyncio.sleep(600)  #  wait 10 minutes
+
+        cl.info("Updating index")
+        cls._event_datacopy_ceph_update_index.set()
 
     async def _index_updater_coro(cls):
         """
@@ -248,7 +254,10 @@ class LocalDataManager(object):
 
     @classmethod
     def add_file(cls, namespace, key, sha1sum):
-        cl.debug("Adding file {}/{}/{}".format(namespace, key, sha1sum))
+
+        # # this can take on the order of microseconds
+        # cl.debug("Adding file {}/{}/{}".format(namespace, key, sha1sum))
+
         hashed_key = hash(str("{}\t{}".format(namespace, key)))
 
         if hashed_key not in cls._hashset:
