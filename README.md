@@ -38,9 +38,9 @@ $(CEPH_POOL_USER) -p $(CEPH_POOL_NAME)`.
 
 ## Connecting the platt-backend ##
 
-The platt-backend connects by connecting to the port specified by the `-b
-BACKEND_PORT` argument (defaults to 8009): `./platt.py -e --ext_address
-$(GATEWAY_IP) --ext_port $(GATEWAY_PORT)`.
+The [platt backend](https://github.com/Klump3n/platt-backend) connects by
+connecting to the port specified by the `-b BACKEND_PORT` argument (defaults to
+8009): `./platt.py -e --ext_address $(GATEWAY_IP) --ext_port $(GATEWAY_PORT)`.
 
 
 ## Adding data to a running gateway ##
