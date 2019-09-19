@@ -36,7 +36,7 @@ $(CEPH_POOL_USER) -p $(CEPH_POOL_NAME)`.
 ```
 
 
-## Connecting the platt-backend ##
+## Connecting the platt backend ##
 
 The [platt backend](https://github.com/Klump3n/platt-backend) connects by
 connecting to the port specified by the `-b BACKEND_PORT` argument (defaults to
