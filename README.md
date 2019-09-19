@@ -2,10 +2,12 @@
 
 This program supplies the platt backend with data from a ceph server.
 
+
 ## Requirements ##
 
 For compatibility reasons (rados library) this needs a Python 3.5 environment.
-This can be easily set up in anaconda.
+This can be easily set up in anaconda: `conda create -n py35 python=3.5`.
+
 
 ## Usage ##
 
@@ -13,7 +15,7 @@ Before running make sure to enable the Python 3.5 environment, e.g. by typing
 `source activate py35`.
 
 Calling the program is then done with `./main.py -c $(CEPH_CONFIG) -u
-$(CEPH_POOL_USER) -p $(CEPH_POOL)`.
+$(CEPH_POOL_USER) -p $(CEPH_POOL_NAME)`.
 
 `$(CEPH_CONFIG)` is a config file that looks roughly like this:
 
@@ -32,6 +34,27 @@ $(CEPH_POOL_USER) -p $(CEPH_POOL)`.
         caps mon = ...
         caps osd = ...
 ```
+
+
+## Connecting the platt-backend ##
+
+The platt-backend connects by connecting to the port specified by the `-b
+BACKEND_PORT` argument (defaults to 8009): `./platt.py -e --ext_address
+$(GATEWAY_IP) --ext_port $(GATEWAY_PORT)`.
+
+
+## Adding data to a running gateway ##
+
+Once the gateway has collected information about the simulation data that is
+present on the server it relies on the user to feed information into the
+gateway. This means that the ceph server is indexed once when starting the
+program. Afterwards the gateway must be notified about every new file that is
+being uploaded. To do this, send a string with the following format to the
+gateway-ip on the port specified by the `-s SIMULATION_PORT` argument (defaults
+to 8010): `$(SIMULATION_NAMESPACE)\t$(FILE_NAME)\t$(FILE_SHA1_SUM)`. The three
+fields in the string are separated by two tabs. The `$(FILE_SHA1_SUM)` is
+optional but can speed up processing.
+
 
 ## Notes ##
 
