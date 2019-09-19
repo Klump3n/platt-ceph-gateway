@@ -14,7 +14,7 @@ This can be easily set up in anaconda: `conda create -n py35 python=3.5`.
 Before running make sure to enable the Python 3.5 environment, e.g. by typing
 `source activate py35`.
 
-Calling the program is then done with `./main.py -c $(CEPH_CONFIG) -u
+Calling the program is then done with `./gateway.py -c $(CEPH_CONFIG) -u
 $(CEPH_POOL_USER) -p $(CEPH_POOL_NAME)`.
 
 `$(CEPH_CONFIG)` is a config file that looks roughly like this:
@@ -66,12 +66,12 @@ logging by appending `-l verbose` to the command line input.
 
 ## Usage printout ##
 
-Type `./main.py -h` for the help.
+Type `./gateway.py -h` for the help.
 
 ```
-usage: main.py [-h] -c CONFIG -p POOL -u USER [-b BACKEND_PORT]
-               [-s SIMULATION_PORT]
-               [-l {debug,verbose,info,warning,error,critical,quiet}] [--test]
+usage: gateway.py [-h] -c CONFIG -p POOL -u USER [-b BACKEND_PORT]
+                  [-s SIMULATION_PORT]
+                  [-l {debug,verbose,info,warning,error,critical,quiet}] [--test]
 
 Deliver data from the ceph cluster to the platt backend.
 

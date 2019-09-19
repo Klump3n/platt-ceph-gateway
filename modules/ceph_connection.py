@@ -14,7 +14,7 @@ import functools
 import multiprocessing
 
 try:
-    import rados.rados as rados   # comes from python3-rados_12.2.7-1_bpo90+1_amd64.deb
+    import librados.rados as rados   # comes from python3-rados_12.2.7-1_bpo90+1_amd64.deb
 except ImportError:
     print("\n\nThis module needs a working python3.5 environment!\n\n")
     raise
