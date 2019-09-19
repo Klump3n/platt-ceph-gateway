@@ -433,6 +433,7 @@ class CephConnection(object):
         Return the complete index.
 
         """
+        ########
 
         # # uncomment this section if you are debugging
         # # it creates a snapshot of the current index and just loads that on
@@ -472,6 +473,8 @@ class CephConnection(object):
         #     with open("index.pickle", "wb") as idx:
         #         pickle.dump(index, idx)
 
+        ########
+
         namespaces = get_namespaces(
             self._conffile, self._target_pool, self._rados_id)
         expected_namespaces = namespaces.copy()
@@ -493,6 +496,8 @@ class CephConnection(object):
             index_name = namespace_index["namespace"]
             expected_namespaces.remove(index_name)
 
+        ########
+
         return {"index": index}
 
     def read_index_for_namespace(self, task_info):
@@ -503,6 +508,8 @@ class CephConnection(object):
 
         """
         namespace = task_info["namespace"]
+
+        cl.verbose("Reading index for namespace {}".format(namespace))
 
         self._set_namespace(namespace)
 
