@@ -64,6 +64,14 @@ are actually happening in the background it may be helpful to enable verbose
 logging by appending `-l verbose` to the command line input.
 
 
+## Data organisation of the ceph cluster ##
+
+All simulations are saved in a _Pool_. In the pool there are different
+_Namespaces_. Each namespace contains exactly one simulation with all files
+(mesh, field; for every timestep). Each file is a binary. Each binary can have a
+sha1sum attached to it. The sha1sum makes identifying the file quicker.
+
+
 ## Usage printout ##
 
 Type `./gateway.py -h` for the help.
