@@ -14,7 +14,6 @@ import multiprocessing
 from util.loggers import CoreLog as cl, BackendLog as bl, SimulationLog as sl
 
 from modules.local_data_manager import LocalDataManager
-# from modules.proxy_manager import ProxyManager
 from modules.backend_manager import BackendManager
 from modules.simulation_manager import SimulationManager
 from modules.ceph_manager import CephManager
@@ -110,8 +109,6 @@ def start_tasks(args):
             queue_datacopy_backend_new_file_and_hash,
             event_datacopy_backend_get_index,
             queue_datacopy_backend_index_data,
-            # event_datacopy_backend_index_ready,
-            # pipe_this_end_datacopy_backend_index,
             event_datacopy_ceph_update_index,
             queue_datacopy_ceph_filename_and_hash,
             event_data_manager_shutdown,
@@ -134,8 +131,6 @@ def start_tasks(args):
             queue_datacopy_backend_new_file_and_hash,
             event_datacopy_backend_get_index,
             queue_datacopy_backend_index_data,
-            # event_datacopy_backend_index_ready,
-            # pipe_that_end_datacopy_backend_index,
             queue_backend_ceph_request_file,
             queue_backend_ceph_answer_file_name_contents_hash,
             event_backend_manager_shutdown

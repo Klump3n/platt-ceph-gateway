@@ -197,7 +197,6 @@ class CephManager(object):
                         "task_info": {}
                     }
                     self._queue_ceph_process_new_task_index.put(task)
-                    # self._queue_ceph_process_new_task.put(task)
 
                 # request for hash of file
                 try:
@@ -232,7 +231,6 @@ class CephManager(object):
                         }
                     }
                     self._queue_ceph_process_new_task_data.put(task)
-                    # self._queue_ceph_process_new_task.put(task)
                 except queue.Empty:
                     pass
 

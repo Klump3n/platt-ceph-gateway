@@ -26,8 +26,6 @@ class LocalDataManager(object):
                 queue_datacopy_backend_new_file_and_hash,
                 event_datacopy_backend_get_index,
                 queue_datacopy_backend_index_data,
-                # event_datacopy_backend_index_ready,
-                # pipe_this_end_datacopy_backend_index,
                 event_datacopy_ceph_update_index,
                 queue_datacopy_ceph_filename_and_hash,
                 event_data_manager_shutdown,
@@ -43,8 +41,6 @@ class LocalDataManager(object):
                          queue_datacopy_backend_new_file_and_hash,
                          event_datacopy_backend_get_index,
                          queue_datacopy_backend_index_data,
-                         # event_datacopy_backend_index_ready,
-                         # pipe_this_end_datacopy_backend_index,
                          event_datacopy_ceph_update_index,
                          queue_datacopy_ceph_filename_and_hash,
                          event_data_manager_shutdown,
@@ -59,8 +55,6 @@ class LocalDataManager(object):
                  queue_datacopy_backend_new_file_and_hash,
                  event_datacopy_backend_get_index,
                  queue_datacopy_backend_index_data,
-                 # event_datacopy_backend_index_ready,
-                 # pipe_this_end_datacopy_backend_index,
                  event_datacopy_ceph_update_index,
                  queue_datacopy_ceph_filename_and_hash,
                  event_data_manager_shutdown,
@@ -80,8 +74,6 @@ class LocalDataManager(object):
         # serve index requests from the backend
         cls._event_datacopy_backend_get_index = event_datacopy_backend_get_index
         cls._queue_datacopy_backend_index_data = queue_datacopy_backend_index_data
-        # cls._event_datacopy_backend_index_ready = event_datacopy_backend_index_ready
-        # cls._pipe_this_end_datacopy_backend_index = pipe_this_end_datacopy_backend_index
 
         # request the index from the ceph cluster
         cls._event_datacopy_ceph_update_index = event_datacopy_ceph_update_index

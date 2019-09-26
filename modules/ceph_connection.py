@@ -97,7 +97,6 @@ class CephConnection(object):
             queue_ceph_task,    # queue for receiving things to do
             queue_ceph_task_data,    # queue for task to retrieve data (contents and hashes)
             queue_ceph_task_hashes,    # queue for task to retrieve hashes (externally)
-            # queue_ceph_task_index_hashes,    # queue for retrieving the hash of a file when creating the index
             queue_ceph_task_index_namespace,  # queue for retrieving the index of a namespace
             queue_ceph_task_index,    # queue for retrieving the index (this will start a series of events like getting the namespaces, then the files in every namespace and then the respective hashes)
             event_shutdown_process,  # when this event is set the connection will be closed
@@ -122,7 +121,6 @@ class CephConnection(object):
         self._queue_ceph_task_hashes = queue_ceph_task_hashes
         self._queue_ceph_task_index = queue_ceph_task_index
         self._queue_ceph_task_index_namespace = queue_ceph_task_index_namespace
-        # self._queue_ceph_task_index_hashes = queue_ceph_task_index_hashes
 
         self._event_shutdown_process = event_shutdown_process
 
@@ -188,13 +186,6 @@ class CephConnection(object):
             {"queue": self._queue_ceph_task_data, "blocking_time": 0},
             # {"queue": self._queue_ceph_task_index_hashes, "blocking_time": 0}
         ]
-        #
-        # index_hashes_pattern = [
-        #     {"queue": self._queue_ceph_task_index_hashes, "blocking_time": 1e-1},
-        #     {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
-        #     {"queue": self._queue_ceph_task_data, "blocking_time": 0}
-        # ]
-        # #
         index_namespaces_pattern = [
             {"queue": self._queue_ceph_task_index_namespace, "blocking_time": 1e-1},
             {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
@@ -291,7 +282,6 @@ class CephConnection(object):
                 pattern = [
                     {"queue": self._queue_ceph_task_data, "blocking_time": 1e-1},
                     {"queue": self._queue_ceph_task_hashes, "blocking_time": 0},
-                    # {"queue": self._queue_ceph_task_index_hashes, "blocking_time": 0},
                     {"queue": self._queue_ceph_task_index_namespace, "blocking_time": 0},
                     {"queue": self._queue_ceph_task_index, "blocking_time": 0}
                 ]

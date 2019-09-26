@@ -254,30 +254,6 @@ class BackendManager(object):
                 except queue.Empty:
                     pass
 
-    # def _queue_cleanup_executor(self):
-    #     """
-    #     Run this in a separate executor.
-
-    #     """
-    #     time.sleep(.5)          # wait for start
-
-    #     while True:
-
-    #         # repeat 1000 times per second, acts as rate throttling
-    #         time.sleep(1e-3)
-
-    #         if not self._new_file_connection_active:
-    #             try:
-    #                 self._new_file_send_queue.get(False)
-    #             except queue.Empty:
-    #                 pass
-
-    #         if not self._index_connection_active:
-    #             self._get_index_server_event.clear()
-    #             try:
-    #                 self._index_data_queue.get(False)
-    #             except queue.Empty:
-    #                 pass
 
     ##################################################################
     # handle the cleanup of queues when connections are not active
